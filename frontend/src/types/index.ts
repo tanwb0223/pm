@@ -138,6 +138,9 @@ export interface ProgressRow {
   is_stagnant: boolean
   is_near_deadline: boolean
   has_plan: boolean
+  /** 上次填报的说明（用于填报时自动带出） */
+  last_note?: string | null
+  last_record_at?: string | null
 }
 
 export interface Completeness {
@@ -232,7 +235,36 @@ export interface PendingReport {
   overdue_days: number
 }
 
-/** 及时率明细一行 */
+/** 批量导入结果 */
+export interface ImportResult {
+  total: number
+  created: number
+  updated: number
+  skipped: number
+  error_count: number
+  errors: { row: number; error: string }[]
+}
+
+/** 进度趋势点 */
+export interface TrendPoint {
+  date: string
+  expected: number | null
+  actual: number | null
+  deviation: number | null
+  is_free_day: boolean
+}
+
+/** 学院对比一行 */
+export interface CollegeCompareRow {
+  college_id: number
+  college_name: string
+  total_subs: number
+  avg_deviation: number | null
+  lagging_count: number
+  severe_count: number
+  updated_count: number
+  update_rate: number | null
+}
 export interface TimelinessDetailRow {
   sub_id: number
   sub_name: string

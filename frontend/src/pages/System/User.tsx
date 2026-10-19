@@ -12,10 +12,11 @@ import {
   Tag,
   App,
 } from 'antd'
-import { PlusOutlined, SearchOutlined } from '@ant-design/icons'
+import { PlusOutlined, SearchOutlined, UploadOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 
 import PageHeader from '@/components/PageHeader'
+import ImportModal from '@/components/ImportModal'
 import { systemApi, collegeApi } from '@/api'
 import { fmtDateTime } from '@/lib/constants'
 import { useAuthStore } from '@/stores/auth'
@@ -28,6 +29,7 @@ export default function UserPage() {
   const hasPerm = useAuthStore((s) => s.hasPerm)
 
   const [keyword, setKeyword] = useState('')
+  const [importOpen, setImportOpen] = useState(false)
   const [collegeId, setCollegeId] = useState<number | undefined>()
   const [status, setStatus] = useState<string | undefined>()
   const [page, setPage] = useState(1)
@@ -169,9 +171,14 @@ export default function UserPage() {
         subtitle="系统用户账号；第三方登录（SSO/钉钉等）首次登录时按自动建号规则创建"
         extra={
           hasPerm('system:user') && (
-            <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-              新增用户
-            </Button>
+            <Space>
+              <Button icon={<UploadOutlined />} onClick={() => setImportOpen(true)}>
+                批量导入
+              </Button>
+              <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+                新增用户
+              </Button>
+            </Space>
           )
         }
       />
@@ -289,6 +296,13 @@ export default function UserPage() {
           </Form.Item>
         </Form>
       </Modal>
+
+      <ImportModal
+        open={importOpen}
+        kind="user"
+        onClose={() => setImportOpen(false)}
+        onSuccess={() => qc.invalidateQueries({ queryKey: ['system-users'] })}
+      />
     </div>
   )
 }

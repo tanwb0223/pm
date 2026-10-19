@@ -1,4 +1,4 @@
-import { del, download, get, post, put } from '@/lib/http'
+import { del, download, get, http, post, put } from '@/lib/http'
 import type {
   Alert,
   AlertGroup,
@@ -18,6 +18,7 @@ import type {
   TimelinessDetailRow,
   TodoData,
   UserItem,
+  ImportResult,
 } from '@/types'
 
 // ================================================================ 认证
@@ -143,6 +144,39 @@ export const progressApi = {
       major_count: number
       majors: { id: number; name: string; progress: number }[]
     }>('/progress/school'),
+  /** 子项目进度趋势曲线 */
+  subTrend: (subId: number, days = 90) =>
+    get<{
+      sub_id: number
+      sub_name: string
+      plan_start: string | null
+      plan_end: string | null
+      current_progress: number
+      has_plan: boolean
+      first_lag_date: string | null
+      lag_days: number
+      points: {
+        date: string
+        expected: number | null
+        actual: number | null
+        deviation: number | null
+        is_free_day: boolean
+      }[]
+    }>(`/progress/sub/${subId}/trend`, { days }),
+  /** 学院横向对比 */
+  collegeCompare: (majorId?: number) =>
+    get<
+      {
+        college_id: number
+        college_name: string
+        total_subs: number
+        avg_deviation: number | null
+        lagging_count: number
+        severe_count: number
+        updated_count: number
+        update_rate: number | null
+      }[]
+    >('/progress/college-compare', majorId ? { major_id: majorId } : undefined),
 }
 
 // ================================================================ 预警
@@ -289,6 +323,29 @@ export const systemApi = {
   removeHoliday: (id: number) => del<void>(`/system/holidays/${id}`),
   auditLogs: (params: Record<string, unknown>) =>
     get<PageData<Record<string, unknown>>>('/system/audit-logs', params),
+  /** 下载导入模板 */
+  downloadTemplate: (kind: 'user' | 'college') =>
+    download(`/system/import/templates/${kind}`),
+  /** 批量导入用户 */
+  importUsers: async (file: File, opts?: { default_password?: string; update_existing?: boolean }) => {
+    const form = new FormData()
+    form.append('file', file)
+    const resp = await http.post('/system/import/users', form, {
+      params: opts,
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return resp as unknown as ImportResult
+  },
+  /** 批量导入学院 */
+  importColleges: async (file: File, updateExisting = false) => {
+    const form = new FormData()
+    form.append('file', file)
+    const resp = await http.post('/system/import/colleges', form, {
+      params: { update_existing: updateExisting },
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return resp as unknown as ImportResult
+  },
 }
 
 // ================================================================ 导出

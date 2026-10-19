@@ -22,6 +22,7 @@ import type { ColumnsType } from 'antd/es/table'
 import { DownloadOutlined } from '@ant-design/icons'
 
 import PageHeader from '@/components/PageHeader'
+import SubTrendDrawer from '@/components/SubTrendDrawer'
 import { DeviationText, SubStatusTag } from '@/components/Tags'
 import { exportApi, progressApi, subApi } from '@/api'
 import { SUB_STATUS_LABEL, fmtDate, fmtDateTime } from '@/lib/constants'
@@ -130,6 +131,7 @@ export default function ProgressTablePage() {
 
   // 填报 Modal
   const [fillSub, setFillSub] = useState<ProgressRow | null>(null)
+  const [trendSub, setTrendSub] = useState<ProgressRow | null>(null)
   const [form] = Form.useForm()
   const noChange = !!Form.useWatch('noChange', form)
 
@@ -163,9 +165,14 @@ export default function ProgressTablePage() {
     form.setFieldsValue({
       progress: sub.current_progress,
       noChange: false,
-      note: undefined,
+      // 自动带出上次说明（文档 3.2(1)），改几个字即可提交
+      note: sub.last_note ?? undefined,
       rollback_reason: undefined,
     })
+  }
+
+  const openTrend = (sub: ProgressRow) => {
+    setTrendSub(sub)
   }
 
   const fillMutation = useMutation({
@@ -277,11 +284,16 @@ export default function ProgressTablePage() {
     },
     {
       title: '操作',
-      width: 80,
+      width: 130,
       render: (_, r) => (
-        <Button type="link" size="small" onClick={() => openFill(r)}>
-          填报
-        </Button>
+        <Space size={0}>
+          <Button type="link" size="small" onClick={() => openFill(r)}>
+            填报
+          </Button>
+          <Button type="link" size="small" onClick={() => openTrend(r)}>
+            趋势
+          </Button>
+        </Space>
       ),
     },
   ]
@@ -439,6 +451,14 @@ export default function ProgressTablePage() {
           </Form.Item>
         </Form>
       </Modal>
+
+      {/* 进度趋势曲线 */}
+      <SubTrendDrawer
+        subId={trendSub?.id ?? null}
+        subName={trendSub?.name}
+        open={trendSub !== null}
+        onClose={() => setTrendSub(null)}
+      />
     </div>
   )
 }

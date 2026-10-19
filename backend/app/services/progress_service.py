@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -112,6 +112,14 @@ class ProgressService:
             last_date = sub.last_update_at.astimezone(UTC).date()
             days_since = cal.effective_days_between(last_date, today)
 
+        # 上次填报的说明（供前端自动带出，减少重复输入 —— 文档 3.2(1)）
+        last = self.db.scalar(
+            select(ProgRecord)
+            .where(ProgRecord.sub_id == sub.id)
+            .order_by(ProgRecord.created_at.desc())
+            .limit(1)
+        )
+
         return {
             "id": sub.id,
             "name": sub.name,
@@ -130,6 +138,9 @@ class ProgressService:
             "is_stagnant": days_since is not None and days_since > 21,
             "is_near_deadline": self._is_near_deadline(sub, today),
             "has_plan": tp is not None,
+            # 上次说明：前端填报弹窗默认填入，改几个字即可提交
+            "last_note": last.note if last else None,
+            "last_record_at": last.created_at if last else None,
         }
 
     @staticmethod
@@ -279,3 +290,188 @@ class ProgressService:
                 created += 1
         self.db.flush()
         return {"date": day.isoformat(), "created": created, "skipped": skipped, "is_free_day": is_free}
+
+    # ============================================================ 进度趋势曲线
+    def sub_trend(self, sub_id: int, days: int = 90) -> dict:
+        """单个子项目的进度曲线（文档 3.2(6)）
+
+        返回两条线：
+        - actual：每日实际进度（取当天快照）
+        - expected：按时间应有的进度
+
+        两条线一交叉就能看出「从哪天开始慢了」。
+        同时算出「开始滞后的日期」与「滞后持续天数」，便于页面直接提示。
+        """
+        sub = self.db.get(ProjSub, sub_id)
+        if sub is None or sub.deleted_at is not None:
+            raise NotFoundError("子项目不存在")
+
+        today = date.today()
+        start = today - timedelta(days=days - 1)
+
+        # 若计划开始早于统计窗口，从计划开始算起（让曲线完整）
+        if sub.plan_start and sub.plan_start < start:
+            start = sub.plan_start
+
+        cal = CalendarService.load(self.db)
+
+        # 快照（按日期升序）
+        snaps = {
+            s.snap_date: s
+            for s in self.db.scalars(
+                select(ProgSnapshot)
+                .where(
+                    ProgSnapshot.sub_id == sub_id,
+                    ProgSnapshot.snap_date >= start,
+                    ProgSnapshot.snap_date <= today,
+                )
+                .order_by(ProgSnapshot.snap_date)
+            )
+        }
+
+        # 进度留痕（用于没有快照的日子补实际值）
+        records = list(
+            self.db.scalars(
+                select(ProgRecord)
+                .where(ProgRecord.sub_id == sub_id)
+                .order_by(ProgRecord.created_at)
+            )
+        )
+
+        # 首次填报日期：此前的实际进度视为 0（项目还没开始填）
+        first_record_date = (
+            records[0].created_at.astimezone(UTC).date() if records else None
+        )
+
+        def actual_at(d: date) -> int | None:
+            """某天的实际进度
+
+            - 有快照：取快照值
+            - 无快照但在首次填报之后：取该日及之前最后一次填报值
+            - 首次填报之前：0（项目还没开始，进度自然是 0）
+            - 完全没有填报记录：None（不画线）
+            """
+            snap = snaps.get(d)
+            if snap is not None:
+                return snap.actual_progress
+            if first_record_date is None:
+                return None
+            if d < first_record_date:
+                # 计划开始之前不算（避免长直线拉低观感）
+                if sub.plan_start and d < sub.plan_start:
+                    return None
+                return 0
+            val = None
+            for r in records:
+                rd = r.created_at.astimezone(UTC).date()
+                if rd <= d:
+                    val = r.progress
+                else:
+                    break
+            return val
+
+        points: list[dict] = []
+        first_lag_date: date | None = None
+        consecutive_start: date | None = None
+        lag_days = 0
+
+        d = start
+        while d <= today:
+            exp = time_progress(sub.plan_start, sub.plan_end, d)
+            act = actual_at(d)
+            dev = (act - exp) if (act is not None and exp is not None) else None
+
+            points.append(
+                {
+                    "date": d.isoformat(),
+                    "expected": exp,
+                    "actual": act,
+                    "deviation": dev,
+                    "is_free_day": cal.is_free_day(d),
+                }
+            )
+
+            # 滞后判定：偏差 < -10%（与 AL-01 同口径）
+            # first_lag_date 记「最早一次滞后」，lag_days 记「当前连续滞后天数」
+            if dev is not None and dev < -10:
+                if first_lag_date is None:
+                    first_lag_date = d
+                if consecutive_start is None:
+                    consecutive_start = d
+                lag_days = (d - consecutive_start).days + 1
+            else:
+                consecutive_start = None
+                lag_days = 0
+
+            d += timedelta(days=1)
+
+        return {
+            "sub_id": sub.id,
+            "sub_name": sub.name,
+            "plan_start": sub.plan_start,
+            "plan_end": sub.plan_end,
+            "current_progress": sub.current_progress,
+            "points": points,
+            "first_lag_date": first_lag_date.isoformat() if first_lag_date else None,
+            "lag_days": lag_days,
+            "has_plan": sub.plan_start is not None and sub.plan_end is not None,
+        }
+
+    # ============================================================ 学院对比
+    def college_compare(self, user: Any, major_id: int | None = None) -> list[dict]:
+        """学院横向对比（文档 3.2(6)）
+
+        每个学院一行：
+        - avg_deviation   平均偏差（按子项目简单平均）
+        - lagging_count   滞后子项目数（偏差 < -10%）
+        - severe_count    严重滞后数（偏差 <= -25%）
+        - total_subs      计入统计的子项目数
+        - update_rate     更新及时率（21 个有效日内更新过的占比）
+        """
+        stmt = select(ProjSub).where(ProjSub.deleted_at.is_(None))
+        stmt = apply_scope(stmt, user, ProjSub)
+        if major_id:
+            stmt = stmt.where(ProjSub.major_id == major_id)
+        subs = list(self.db.scalars(stmt))
+
+        today = date.today()
+        cal = CalendarService.load(self.db)
+        colleges = {c.id: c.name for c in self.db.scalars(select(SysCollege))}
+
+        buckets: dict[int, list[dict]] = {}
+        for s in subs:
+            if s.status in ("ABORTED",):
+                continue
+            tp = time_progress(s.plan_start, s.plan_end, today)
+            dev = (s.current_progress - tp) if tp is not None else None
+            days_since = None
+            if s.last_update_at:
+                days_since = cal.effective_days_between(
+                    s.last_update_at.astimezone(UTC).date(), today
+                )
+            buckets.setdefault(s.college_id, []).append(
+                {"dev": dev, "days_since": days_since}
+            )
+
+        out = []
+        for cid, items in buckets.items():
+            devs = [x["dev"] for x in items if x["dev"] is not None]
+            updates = [x["days_since"] for x in items if x["days_since"] is not None]
+            total = len(items)
+            fresh = sum(1 for x in updates if x <= 21)
+            out.append(
+                {
+                    "college_id": cid,
+                    "college_name": colleges.get(cid, f"#{cid}"),
+                    "total_subs": total,
+                    "avg_deviation": round(sum(devs) / len(devs), 1) if devs else None,
+                    "lagging_count": sum(1 for x in devs if x < -10),
+                    "severe_count": sum(1 for x in devs if x <= -25),
+                    "updated_count": fresh,
+                    "update_rate": round(fresh / total * 100, 1) if total else None,
+                }
+            )
+
+        # 平均偏差从小到大（最滞后在前）
+        out.sort(key=lambda x: (x["avg_deviation"] is None, x["avg_deviation"] or 0))
+        return out

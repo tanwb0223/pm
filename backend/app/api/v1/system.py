@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 from datetime import date
+from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, File, Query, UploadFile
+from fastapi.responses import Response
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
@@ -454,3 +456,85 @@ def list_audit(
         page_no,
         page_size,
     )
+
+
+# ================================================================ 批量导入
+@router.get("/import/templates/{kind}", summary="下载导入模板（user / college）")
+def download_template(kind: str):
+    from app.services import import_service
+
+    if kind == "user":
+        content = import_service.user_template()
+        name = "用户导入模板.xlsx"
+    elif kind == "college":
+        content = import_service.college_template()
+        name = "学院导入模板.xlsx"
+    else:
+        raise BusinessError("kind 只能是 user 或 college")
+
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}",
+            "Access-Control-Expose-Headers": "Content-Disposition",
+        },
+    )
+
+
+@router.post(
+    "/import/users",
+    summary="批量导入用户（Excel/CSV）",
+    dependencies=[Depends(require_perm("system:user"))],
+)
+async def import_users(
+    file: UploadFile = File(..., description=".xlsx 或 .csv"),
+    default_password: str = Query(default="Init@123456", min_length=6, max_length=64),
+    update_existing: bool = Query(default=False, description="已存在工号是否更新"),
+    db: Session = Depends(get_db),
+):
+    from app.services import import_service
+
+    content = await file.read()
+    if len(content) > 10 * 1024 * 1024:
+        raise BusinessError("文件不能超过 10MB")
+
+    result = import_service.import_users(
+        db,
+        file.filename or "",
+        content,
+        default_password=default_password,
+        update_existing=update_existing,
+    )
+    if result.errors:
+        # 有错误则整体不导入
+        db.rollback()
+    else:
+        db.commit()
+    return ok(result.to_dict())
+
+
+@router.post(
+    "/import/colleges",
+    summary="批量导入学院（Excel/CSV）",
+    dependencies=[Depends(require_perm("system:org"))],
+)
+async def import_colleges(
+    file: UploadFile = File(..., description=".xlsx 或 .csv"),
+    update_existing: bool = Query(default=False),
+    db: Session = Depends(get_db),
+):
+    from app.services import import_service
+
+    content = await file.read()
+    if len(content) > 10 * 1024 * 1024:
+        raise BusinessError("文件不能超过 10MB")
+
+    result = import_service.import_colleges(
+        db, file.filename or "", content, update_existing=update_existing
+    )
+    if result.errors:
+        db.rollback()
+    else:
+        db.commit()
+    return ok(result.to_dict())

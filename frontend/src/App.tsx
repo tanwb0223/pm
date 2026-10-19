@@ -8,6 +8,7 @@ import MajorListPage from '@/pages/Project/MajorList'
 import MajorDetailPage from '@/pages/Project/MajorDetail'
 import SubListPage from '@/pages/Project/SubList'
 import ProgressTablePage from '@/pages/Progress/Table'
+import CollegeComparePage from '@/pages/Progress/CollegeCompare'
 import AlertCenterPage from '@/pages/Alert/Center'
 import AlertStatsPage from '@/pages/Alert/Stats'
 import ReportListPage from '@/pages/Report/List'
@@ -54,6 +55,7 @@ export default function App() {
         <Route path="project/subs" element={<SubListPage />} />
 
         <Route path="progress/table" element={<ProgressTablePage />} />
+        <Route path="progress/college-compare" element={<CollegeComparePage />} />
 
         <Route path="alert/center" element={<AlertCenterPage />} />
         <Route path="alert/stats" element={<AlertStatsPage />} />

@@ -91,6 +91,11 @@ export default function AppLayout() {
     }
     if (hasPerm('progress:table')) {
       items.push({ key: '/progress/table', icon: <BarChartOutlined />, label: '进度总表' })
+      items.push({
+        key: '/progress/college-compare',
+        icon: <BarChartOutlined />,
+        label: '学院对比',
+      })
     }
     if (hasPerm('alert:list')) {
       items.push({

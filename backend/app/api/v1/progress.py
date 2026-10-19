@@ -141,6 +141,29 @@ def school_summary(db: Session = Depends(get_db)):
     return ok(svc.school_summary())
 
 
+# ================================================================ 趋势与对比
+@router.get("/progress/sub/{sub_id}/trend", summary="子项目进度趋势曲线")
+def sub_trend(
+    sub_id: int,
+    days: int = Query(default=90, ge=7, le=365, description="统计天数"),
+    db: Session = Depends(get_db),
+):
+    """返回两条线：实际进度 vs 按时间应有进度，用于看「从哪天开始慢了」"""
+    svc = ProgressService(db)
+    return ok(svc.sub_trend(sub_id, days))
+
+
+@router.get("/progress/college-compare", summary="学院横向对比")
+def college_compare(
+    major_id: int | None = None,
+    user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """各学院平均偏差、滞后数、更新及时率，用于校级横向比较"""
+    svc = ProgressService(db)
+    return ok(svc.college_compare(user, major_id))
+
+
 # ================================================================ 快照
 @router.post(
     "/progress/snapshot",
