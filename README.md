@@ -6,12 +6,17 @@
 
 ```
 pm/
-├── doc/          需求方案说明书（V1.4，含 42 条待确认事项）
-├── backend/      FastAPI + PostgreSQL 后端（84 个 API）
-├── frontend/     React 18 + TypeScript + Ant Design 5 前端（20 个页面）
-├── 需求文档分析报告.md
-├── 功能缺失分析报告.md
-└── 开发方案.md
+├── doc/                        全部文档
+│   ├── 产教融合项目管理系统-需求方案说明书-V1.4.docx   需求方案（含 42 条待确认事项）
+│   ├── 需求文档分析报告.md                            需求解读与疑点梳理
+│   ├── 功能缺失分析报告.md                            与通用项目管理软件的差距分析
+│   ├── 开发方案.md                                    技术选型、数据模型、工作量
+│   └── 部署文档.md                                    部署指南（Linux / Windows / Docker）
+├── backend/                    FastAPI + PostgreSQL 后端（84 个 API）
+├── frontend/                   React 18 + TypeScript + Ant Design 5 前端（20 个页面）
+├── Dockerfile                  单镜像构建（前端 + 后端）
+├── docker-compose.yml          应用 + PostgreSQL 编排
+└── README.md                   本文件
 ```
 
 ## 技术栈
@@ -19,7 +24,7 @@ pm/
 | 层 | 技术 |
 |---|---|
 | 后端 | Python 3.12 · FastAPI 0.146 · SQLAlchemy 2.1（同步） · Alembic · psycopg 3 |
-| 数据库 | PostgreSQL 16+ |
+| 数据库 | PostgreSQL 18+ |
 | 前端 | React 18 · TypeScript 5 · Ant Design 5 · TanStack Query 5 · zustand · ECharts |
 | 构建 | Vite 5 |
 | 认证 | 9 种协议（密码 / OIDC / OAuth2 / CAS / SAML2 / LDAP / 飞书 / 钉钉 / 企业微信） |

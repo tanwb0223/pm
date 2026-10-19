@@ -68,7 +68,12 @@ services:
 
   # ================================================================ 数据库
   db:
-    image: postgres:16-alpine
+    # PostgreSQL 18
+    # 注意：PG 18 官方镜像把数据目录改为 /var/lib/postgresql/18/docker，
+    #      并要求挂载父目录 /var/lib/postgresql（而非旧版的 /var/lib/postgresql/data），
+    #      这样后续用 pg_upgrade --link 升级大版本不会跨挂载点。
+    #      详见 https://github.com/docker-library/postgres/issues/37
+    image: postgres:18-alpine
     container_name: pm-db
     restart: unless-stopped
     environment:
@@ -78,7 +83,7 @@ services:
       POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
       TZ: Asia/Shanghai
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql
     # 默认不对外暴露；本地调试可取消注释
     # ports:
     #   - "127.0.0.1:5432:5432"
