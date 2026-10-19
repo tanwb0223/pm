@@ -34,15 +34,31 @@ class Settings(BaseSettings):
     smtp_use_ssl: bool = True
     mail_from: str = ""
 
+    # 短信（可选，一期未接入实现）
+    sms_enabled: bool = False
+    sms_provider: str = ""
+    sms_access_key: str = ""
+    sms_secret_key: str = ""
+
     # 附件
     upload_dir: str = "D:/data/pm/upload"
     upload_max_size_mb: int = 50
+
+    # 前端静态托管
+    # 生产部署默认由 nginx 托管前端（frontend_serve=False）；
+    # 设为 true 时由 FastAPI 直接托管，适合「不想装 nginx」的极简部署
+    frontend_serve: bool = False
+    frontend_dir: str = "/app/frontend_dist"
 
     # 定时任务
     scheduler_enabled: bool = False
     daily_scan_hour: int = 1
     digest_hour: int = 8
     digest_minute: int = 30
+
+    # 数据保留（年）：用于运维清理脚本
+    audit_retention_years: int = 2
+    snapshot_retention_years: int = 3
 
     # CORS（开发期前端 5173）
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])

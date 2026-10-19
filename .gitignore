@@ -99,3 +99,9 @@ backups/
 backend/fonts/*.ttf
 backend/fonts/*.ttc
 backend/fonts/*.otf
+
+# Docker 部署环境变量样例（允许入库）
+!.env.docker.example
+
+# 临时提交信息文件
+.git-commit-msg.txt

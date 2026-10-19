@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from sqlalchemy.exc import IntegrityError
 
 from app.core.audit import AuditMiddleware
@@ -97,6 +98,50 @@ app.include_router(report_router.router)
 app.include_router(export_router.router)
 app.include_router(risk_router.router)
 app.include_router(system_router.router)
+
+
+# ---------------------------------------------------------------- 前端静态文件（可选）
+# 生产默认由 nginx 托管前端；仅当 PM_FRONTEND_SERVE=true 时才由 FastAPI 托管
+_FRONTEND_DIR = Path(settings.frontend_dir)
+
+if settings.frontend_serve and _FRONTEND_DIR.is_dir():
+    from fastapi.responses import FileResponse
+    from fastapi.staticfiles import StaticFiles
+
+    # 带 hash 的静态资源长期缓存
+    assets_dir = _FRONTEND_DIR / "assets"
+    if assets_dir.is_dir():
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
+
+    @app.get("/healthz", include_in_schema=False)
+    def healthz():
+        return PlainTextResponse("ok")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def spa_fallback(full_path: str):
+        """SPA history 路由回退：非 API 路径一律返回 index.html"""
+        # API 路径不该走到这里
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Not Found")
+
+        # 优先返回真实存在的静态文件（favicon 等）
+        candidate = (_FRONTEND_DIR / full_path).resolve()
+        try:
+            candidate.relative_to(_FRONTEND_DIR.resolve())
+        except ValueError:
+            raise HTTPException(status_code=404, detail="Not Found") from None
+
+        if candidate.is_file():
+            return FileResponse(candidate)
+
+        index = _FRONTEND_DIR / "index.html"
+        if index.is_file():
+            return FileResponse(index, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+        raise HTTPException(status_code=404, detail="Not Found")
+
+    logger.info("已启用前端静态托管（FastAPI 模式）：%s", _FRONTEND_DIR)
+else:
+    logger.info("前端由 nginx 托管，FastAPI 仅提供 API")
 
 
 # ---------------------------------------------------------------- 启动/关闭
