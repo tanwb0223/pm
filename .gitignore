@@ -1,0 +1,101 @@
+# ---------------------------------------------------------------- 环境与密钥
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+secrets/
+secret*.json
+
+# ---------------------------------------------------------------- Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# 虚拟环境
+.venv/
+venv/
+ENV/
+env/
+
+# 测试与缓存
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.mypy_cache/
+.ruff_cache/
+
+# ---------------------------------------------------------------- Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+
+# 前端构建产物
+frontend/dist/
+frontend/dist-ssr/
+frontend/.vite/
+*.local
+
+# ---------------------------------------------------------------- 编辑器与系统
+.vscode/
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------------------------------------------------------------- 运行时产物
+*.log
+logs/
+uploads/
+backend/uploads/
+tmp/
+temp/
+
+# ---------------------------------------------------------------- 文档临时文件
+~$*.docx
+~$*.xlsx
+~$*.pptx
+*.tmp
+
+# ---------------------------------------------------------------- 本地数据与备份
+*.sqlite
+*.sqlite3
+*.db
+backup/
+backups/
+*.dump
+*.sql.gz
+
+# ---------------------------------------------------------------- 字体（版权原因不入库）
+backend/fonts/*.ttf
+backend/fonts/*.ttc
+backend/fonts/*.otf

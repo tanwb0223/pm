@@ -1,0 +1,77 @@
+"""数据范围过滤：所有列表查询必须经过这里
+
+用法：
+    stmt = select(ProjSub)
+    stmt = apply_scope(stmt, user, ProjSub)
+    rows = db.scalars(stmt).all()
+
+模型需具备可识别的字段，按以下顺序尝试：
+    1. major_id     （大项目范围）
+    2. college_id   （学院范围）
+    3. owner_id     （本人范围）
+"""
+from __future__ import annotations
+
+from typing import Any, TypeVar
+
+from sqlalchemy import Select, false, or_
+from sqlalchemy.orm import InstrumentedAttribute
+
+from app.core.deps import CurrentUser
+
+T = TypeVar("T")
+
+
+def _has(model: Any, name: str) -> InstrumentedAttribute | None:
+    attr = getattr(model, name, None)
+    return attr if isinstance(attr, InstrumentedAttribute) else None
+
+
+def apply_scope(stmt: Select, user: CurrentUser, model: Any) -> Select:
+    """按当前用户的数据范围给查询加过滤条件"""
+    if user.has_all_scope():
+        return stmt
+
+    major_ids = user.major_ids()
+    college_ids = user.college_ids()
+    has_self = any(s.scope_type in ("SELF", "CUSTOM") for s in user.scopes)
+
+    conds: list[Any] = []
+
+    major_col = _has(model, "major_id")
+    college_col = _has(model, "college_id")
+    owner_col = _has(model, "owner_id")
+
+    if major_ids and major_col is not None:
+        conds.append(major_col.in_(major_ids))
+
+    if college_ids and college_col is not None:
+        conds.append(college_col.in_(college_ids))
+
+    if has_self:
+        if owner_col is not None:
+            conds.append(owner_col == user.id)
+        elif major_col is None and college_col is None:
+            # 无归属字段的表，只能看自己创建的
+            created_col = _has(model, "created_by")
+            if created_col is not None:
+                conds.append(created_col == user.id)
+
+    if not conds:
+        # 没有任何可匹配的范围：返回空集（安全默认）
+        return stmt.where(false())
+
+    return stmt.where(or_(*conds))
+
+
+def can_access_sub(user: CurrentUser, sub: Any) -> bool:
+    """单个子项目是否有权访问（用于详情页）"""
+    if user.has_all_scope():
+        return True
+    if user.major_ids() and getattr(sub, "major_id", None) in user.major_ids():
+        return True
+    if user.college_ids() and getattr(sub, "college_id", None) in user.college_ids():
+        return True
+    if getattr(sub, "owner_id", None) == user.id:
+        return True
+    return False

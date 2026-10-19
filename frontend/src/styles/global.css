@@ -1,0 +1,122 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei',
+    'PingFang SC', 'Hiragino Sans GB', 'Helvetica Neue', Arial, sans-serif;
+  background: #f5f7fa;
+  color: #23282f;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 页面容器 */
+.page-container {
+  padding: 16px;
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.page-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: #1e3a5f;
+  margin: 0;
+}
+
+.page-subtitle {
+  color: #8c8c8c;
+  font-size: 13px;
+  margin-top: 4px;
+}
+
+/* 卡片内表格去掉多余边距 */
+.ant-card-body .ant-table-wrapper {
+  margin: -8px -8px -8px -8px;
+}
+
+/* 统计卡片 */
+.stat-card {
+  text-align: center;
+  padding: 8px 0;
+}
+
+.stat-number {
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.stat-label {
+  color: #8c8c8c;
+  font-size: 13px;
+  margin-top: 4px;
+}
+
+/* 进度总表：紧凑行高 */
+.progress-table .ant-table-tbody > tr > td {
+  padding: 8px 12px !important;
+}
+
+/* 数据可信度灰显（文档 3.2(7)：超 21 天未更新） */
+.stale-value {
+  color: #bfbfbf;
+}
+
+/* 偏差强调 */
+.dev-neg {
+  font-weight: 600;
+}
+
+/* 登录页 */
+.login-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  width: 100%;
+  background: linear-gradient(135deg, #1e3a5f 0%, #2e5c8a 50%, #4a7ba7 100%);
+}
+
+.login-card {
+  width: 400px;
+  background: #fff;
+  border-radius: 8px;
+  padding: 40px 36px 32px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+}
+
+.login-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: #1e3a5f;
+  text-align: center;
+  margin: 0;
+}
+
+.login-sub {
+  font-size: 13px;
+  color: #8c8c8c;
+  text-align: center;
+  margin: 8px 0 28px;
+}
+
+.login-footer {
+  text-align: center;
+  color: #8c8c8c;
+  font-size: 12px;
+  margin-top: 20px;
+}
