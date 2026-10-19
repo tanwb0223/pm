@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.deps import CurrentUser, get_current_user, require_perm
 from app.core.exceptions import BusinessError
 from app.core.response import ok, page
+from app.core.scope import assert_sub_access
 from app.db.session import get_db
 from app.schemas.project import (
     CollegeIn,
@@ -258,9 +259,14 @@ def list_subs(
 
 
 @router.get("/subs/{sub_id}", summary="子项目详情")
-def get_sub(sub_id: int, db: Session = Depends(get_db)):
+def get_sub(
+    sub_id: int,
+    user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     svc = ProjectService(db)
     s = svc.get_sub(sub_id)
+    assert_sub_access(user, s)
     colleges = {c.id: c.name for c in svc.list_colleges()}
     d = _sub_out(s)
     d["college_name"] = colleges.get(s.college_id)

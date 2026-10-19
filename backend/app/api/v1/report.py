@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.deps import CurrentUser, get_current_user, require_perm
 from app.core.response import ok, page
+from app.core.scope import assert_report_access
 from app.db.session import get_db
 from app.services.report_service import ReportService
 
@@ -207,9 +208,15 @@ def period_info(
 
 
 @router.get("/reports/{report_id}", summary="报表详情")
-def get_report(report_id: int, db: Session = Depends(get_db)):
+def get_report(
+    report_id: int,
+    user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     svc = ReportService(db)
-    return ok(_out(svc.get(report_id)))
+    rep = svc.get(report_id)
+    assert_report_access(user, rep)
+    return ok(_out(rep))
 
 
 # ---------------------------------------------------------------- 作废

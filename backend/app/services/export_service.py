@@ -28,7 +28,11 @@ _FONT_CANDIDATES = [
     ("msyh", Path("C:/Windows/Fonts/msyh.ttc")),
     # Linux
     ("noto", Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc")),
+    # Debian / Ubuntu
     ("wqy", Path("/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc")),
+    # Alpine（apk add font-wqy-zenhei 的实际安装位置，Docker 镜像用的就是它）
+    ("wqy", Path("/usr/share/fonts/wqy-zenhei/wqy-zenhei.ttc")),
+    ("wqy", Path("/usr/share/fonts/wqy/wqy-zenhei.ttc")),
 ]
 
 _font_registered: str | None = None

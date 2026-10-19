@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.deps import CurrentUser, get_current_user, require_perm
 from app.core.exceptions import BusinessError
 from app.core.response import ok, page
+from app.core.scope import assert_sub_access
 from app.db.session import get_db
 from app.services.progress_service import ProgressService
 from app.services.project_service import ProjectService
@@ -64,8 +65,14 @@ def update_progress(
 
 
 @router.get("/subs/{sub_id}/records", summary="进度变更留痕")
-def list_records(sub_id: int, limit: int = Query(default=100, le=500), db: Session = Depends(get_db)):
+def list_records(
+    sub_id: int,
+    limit: int = Query(default=100, le=500),
+    user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     svc = ProgressService(db)
+    assert_sub_access(user, ProjectService(db).get_sub(sub_id))
     rows = svc.list_records(sub_id, limit)
     return ok(
         [
@@ -86,9 +93,14 @@ def list_records(sub_id: int, limit: int = Query(default=100, le=500), db: Sessi
 
 
 @router.get("/subs/{sub_id}/view", summary="子项目进度视图（含时间进度与偏差）")
-def sub_view(sub_id: int, db: Session = Depends(get_db)):
+def sub_view(
+    sub_id: int,
+    user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     proj = ProjectService(db)
     s = proj.get_sub(sub_id)
+    assert_sub_access(user, s)
     svc = ProgressService(db)
     return ok(svc.sub_view(s))
 

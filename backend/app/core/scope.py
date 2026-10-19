@@ -18,6 +18,7 @@ from sqlalchemy import Select, false, or_
 from sqlalchemy.orm import InstrumentedAttribute
 
 from app.core.deps import CurrentUser
+from app.core.exceptions import ForbiddenError
 
 T = TypeVar("T")
 
@@ -75,3 +76,52 @@ def can_access_sub(user: CurrentUser, sub: Any) -> bool:
     if getattr(sub, "owner_id", None) == user.id:
         return True
     return False
+
+
+# ---------------------------------------------------------------- 单条对象校验
+def assert_sub_access(user: CurrentUser, sub: Any) -> None:
+    """子项目详情/留痕/视图：无权访问直接 403"""
+    if not can_access_sub(user, sub):
+        raise ForbiddenError("无权访问该子项目")
+
+
+def can_access_alert(user: CurrentUser, alert: Any) -> bool:
+    """预警是否在本人数据范围内
+
+    命中任一即放行：
+    - 全校范围
+    - 预警归属的大项目在本人 MAJOR 范围内
+    - 预警归属的学院在本人 COLLEGE 范围内
+    - 本人已认领
+    - 预警关联子项目的负责人是本人（SELF 范围）
+    """
+    if user.has_all_scope():
+        return True
+    major_id = getattr(alert, "major_id", None)
+    if major_id is not None and major_id in user.major_ids():
+        return True
+    college_id = getattr(alert, "college_id", None)
+    if college_id is not None and college_id in user.college_ids():
+        return True
+    if getattr(alert, "claimed_by", None) == user.id:
+        return True
+    sub = getattr(alert, "sub", None)
+    if sub is not None and getattr(sub, "owner_id", None) == user.id:
+        return True
+    return False
+
+
+def assert_alert_access(user: CurrentUser, alert: Any) -> None:
+    """预警详情与处置：无权操作直接 403"""
+    if not can_access_alert(user, alert):
+        raise ForbiddenError("无权访问该预警")
+
+
+def assert_report_access(user: CurrentUser, report: Any) -> None:
+    """报表详情：按所属子项目的数据范围校验"""
+    sub = getattr(report, "sub", None)
+    if sub is not None:
+        assert_sub_access(user, sub)
+        return
+    if not user.has_all_scope():
+        raise ForbiddenError("无权访问该报表")

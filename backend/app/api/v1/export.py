@@ -69,7 +69,9 @@ def export_majors(
     rows, _ = proj.list_majors(
         user, keyword=keyword, type_=type_, status=status, page=1, page_size=10000
     )
-    agg_ok = True
+    from app.services.aggregation_service import AggregationService
+
+    agg = AggregationService(db)
     data = []
     for m in rows:
         cols = proj.list_major_colleges(m.id)
@@ -86,7 +88,8 @@ def export_majors(
                 "original_end": m.original_end,
                 "college_count": len(cols),
                 "sub_count": sum(c["sub_count"] for c in cols),
-                "progress": m.incomplete_reason.get("progress") if m.incomplete_reason else "",
+                # 当前进度：按权重汇总实时计算（incomplete_reason 里没有这个键）
+                "progress": agg.major_progress(m.id),
                 "incomplete": "、".join(x.get("label", "") for x in incomplete) or "完整",
             }
         )
@@ -116,7 +119,13 @@ def export_progress(
     major_id: int | None = None,
     college_id: int | None = None,
     status: str | None = None,
+    keyword: str | None = None,
     only_abnormal: bool = False,
+    sort: str = Query(
+        default="deviation",
+        pattern="^(deviation|update|progress)$",
+        description="与页面一致的排序方式",
+    ),
     user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -126,9 +135,11 @@ def export_progress(
         major_id=major_id,
         college_id=college_id,
         status=status,
+        keyword=keyword,
         only_abnormal=only_abnormal,
         page=1,
         page_size=10000,
+        sort=sort,
     )
     data = []
     for r in rows:

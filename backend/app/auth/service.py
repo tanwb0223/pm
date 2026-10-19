@@ -84,6 +84,13 @@ class AuthService:
             raise ValueError(f"未初始化该认证方式：{kind}")
         callback = adapter.callback_path if adapter else ""
         redirect_uri = build_redirect_uri(self.public_base, callback) if callback else ""
+        # 密钥回显：只给末 4 位，绝不返回明文
+        secret_hint = ""
+        if p.client_secret_enc:
+            try:
+                secret_hint = mask_secret(decrypt_secret(p.client_secret_enc))
+            except ValueError:
+                secret_hint = "****（无法解密，请重新填写）"
         return {
             "kind": p.kind,
             "enabled": p.enabled,
@@ -91,6 +98,7 @@ class AuthService:
             "issuer": p.issuer,
             "client_id": p.client_id,
             "has_client_secret": bool(p.client_secret_enc),
+            "client_secret_hint": secret_hint,
             "scopes": p.scopes,
             "server_url": p.server_url,
             "extra": p.extra or {},

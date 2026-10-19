@@ -1,6 +1,6 @@
 """加密：敏感配置（client_secret、LDAP bind 密码）落库前加密
 
-沿��� Octop 的 Fernet 方案，但密钥来自环境变量，避免密钥和数据同库。
+沿袭 Octop 的 Fernet 方案，但密钥来自环境变量，避免密钥和数据同库。
 """
 from __future__ import annotations
 

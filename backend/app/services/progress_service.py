@@ -79,6 +79,14 @@ class ProgressService:
             sub.status = "IN_PROGRESS"
 
         self.db.flush()
+
+        # 事件驱动预警：进度回调时同步生成 AL-04
+        # 注意：必须在 flush 之后调用，此时留痕记录已落库
+        if is_rollback:
+            from app.services.alert_service import AlertService
+
+            AlertService(self.db).handle_rollback(sub, rollback_reason)
+
         return {
             "record_id": rec.id,
             "sub_id": sub_id,

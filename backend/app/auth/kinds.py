@@ -1,4 +1,4 @@
-"""认证方式定义与常���
+"""认证方式定义与常量
 
 参考 Octop 的 IdentityProvider 适配器模式：
 - 每种认证协议实现统一的 Protocol

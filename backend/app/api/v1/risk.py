@@ -5,7 +5,7 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.deps import CurrentUser, get_current_user, require_perm
@@ -74,6 +74,27 @@ def list_risks(
     db: Session = Depends(get_db),
 ):
     stmt = select(Risk)
+    # 数据范围：风险挂在 major_id / sub_id 上，按大项目与学院范围收敛
+    if not user.has_all_scope():
+        conds = []
+        major_ids = user.major_ids()
+        if major_ids:
+            conds.append(Risk.major_id.in_(major_ids))
+        college_ids = user.college_ids()
+        if college_ids:
+            conds.append(
+                Risk.sub_id.in_(
+                    select(ProjSub.id).where(ProjSub.college_id.in_(college_ids))
+                )
+            )
+        if any(s.scope_type in ("SELF", "CUSTOM") for s in user.scopes):
+            conds.append(Risk.owner_id == user.id)
+        if conds:
+            stmt = stmt.where(or_(*conds))
+        else:
+            # 没有任何可匹配范围 → 空集（安全默认）
+            stmt = stmt.where(Risk.id == -1)
+
     if major_id:
         stmt = stmt.where(Risk.major_id == major_id)
     if sub_id:

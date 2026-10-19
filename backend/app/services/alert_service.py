@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import BusinessError, NotFoundError
 from app.core.scope import apply_scope
 from app.models.alert import Alert, AlertAction
-from app.models.project import ProjMajor, ProjMajorCollege, ProjSub
+from app.models.project import ProgSnapshot, ProjMajor, ProjMajorCollege, ProjSub
 from app.models.system import NotifyLog, SysUser
 from app.services.alert_rules import (
     IMMUTABLE_TYPES,
@@ -39,13 +39,14 @@ class AlertService:
 
     # ============================================================ 扫描
     def scan(self, day: date | None = None) -> dict:
-        """执行全部扫描规则，生成/合并预警"""
+        """执行全部扫描规则：生成/合并预警，并自动关闭条件已消失的预警"""
         day = day or date.today()
         cal = CalendarService.load(self.db)
         ctx = RuleContext(db=self.db, day=day, calendar=cal, config=self.config)
 
         all_candidates: list[AlertCandidate] = []
         rule_stats: dict[str, int] = {}
+        evaluated: set[str] = set()
 
         for rule in build_rules():
             if rule.trigger_mode == "event":
@@ -57,6 +58,7 @@ class AlertService:
                 cands = rule.evaluate(self.db, ctx)
                 rule_stats[rule.code] = len(cands)
                 all_candidates.extend(cands)
+                evaluated.add(rule.code)
             except Exception:
                 logger.exception("规则执行失败：%s", rule.code)
                 rule_stats[rule.code] = -1
@@ -72,6 +74,8 @@ class AlertService:
             elif result == "merged":
                 merged += 1
 
+        auto_closed = self._auto_close(all_candidates, evaluated)
+
         self.db.flush()
         return {
             "date": day.isoformat(),
@@ -79,7 +83,44 @@ class AlertService:
             "candidates": len(all_candidates),
             "created": created,
             "merged": merged,
+            "auto_closed": auto_closed,
         }
+
+    def _auto_close(self, candidates: list[AlertCandidate], evaluated: set[str]) -> int:
+        """自动关闭：本次扫描未再命中的预警（触发条件已消失）
+
+        AL-09 / AL-10 被设计为「只能通过补齐数据自动关闭、不能手工关闭」，
+        这里就是那条自动关闭路径。
+
+        只处理本次**成功执行**的规则，某条规则抛异常时不动它的预警，
+        避免因为一次扫描失败把大批预警误关。
+        事件驱动规则（AL-04）不参与：它不在扫描候选里，天然会「未命中」。
+        """
+        event_codes = {r.code for r in build_rules() if r.trigger_mode == "event"}
+        closeable = {code for code in evaluated if code not in event_codes}
+        if not closeable:
+            return 0
+
+        triggered = {c.dedup_key for c in candidates}
+        rows = list(
+            self.db.scalars(
+                select(Alert).where(
+                    Alert.status.in_(("PENDING", "CLAIMED")),
+                    Alert.alert_type.in_(closeable),
+                )
+            )
+        )
+
+        closed = 0
+        for a in rows:
+            if a.dedup_key in triggered:
+                continue
+            a.status = "CLOSED"
+            a.closed_at = datetime.now(UTC)
+            a.close_reason = "触发条件已消除，系统自动关闭"
+            self._log_action(a.id, "CLOSE", None, reason="触发条件已消除，系统自动关闭")
+            closed += 1
+        return closed
 
     def handle_rollback(self, sub: ProjSub, reason: str | None) -> None:
         """事件驱动：进度回调时生成 AL-04"""
@@ -513,27 +554,43 @@ class AlertService:
 
     # ============================================================ 待办
     def my_todo(self, user: Any) -> dict:
-        """我的督办：三个数字 + 待办清单（文档 5.1）"""
-        pending_alerts = list(
-            self.db.scalars(
-                select(Alert).where(Alert.status.in_(("PENDING", "CLAIMED")))
-            )
-        )
-        # 只看与自己相关或在范围内的
+        """我的督办：三个数字 + 待办清单（文档 5.1）
+
+        口径统一：三个数字与下方清单都限定在本人数据范围内，
+        否则会出现「数字很大但清单只有几条」的错位。
+        """
+        stmt = select(Alert).where(Alert.status.in_(("PENDING", "CLAIMED")))
+        if not user.has_all_scope():
+            major_ids = user.major_ids()
+            college_ids = user.college_ids()
+            conds = []
+            if major_ids:
+                conds.append(Alert.major_id.in_(major_ids))
+            if college_ids:
+                conds.append(Alert.college_id.in_(college_ids))
+            conds.append(Alert.claimed_by == user.id)
+            stmt = stmt.where(or_(*conds))
+
+        pending_alerts = list(self.db.scalars(stmt))
+        # 待办清单：本人已认领的 + 范围内尚未认领的
         todo_alerts = [
             a for a in pending_alerts
             if a.claimed_by == user.id or a.status == "PENDING"
         ][:20]
 
-        # 滞后子项目数
-        lagging = self.db.scalar(
-            text(
-                """
-                SELECT COUNT(DISTINCT sub_id) FROM prog_snapshot
-                WHERE snap_date = CURRENT_DATE AND deviation < -10 AND is_free_day = false
-                """
+        # 滞后子项目数：同样按数据范围收敛
+        lag_stmt = (
+            select(func.count(func.distinct(ProgSnapshot.sub_id)))
+            .join(ProjSub, ProjSub.id == ProgSnapshot.sub_id)
+            .where(
+                ProgSnapshot.snap_date == date.today(),
+                ProgSnapshot.deviation < -10,
+                ProgSnapshot.is_free_day.is_(False),
+                ProjSub.deleted_at.is_(None),
             )
-        ) or 0
+        )
+        lag_stmt = apply_scope(lag_stmt, user, ProjSub)
+        lagging = self.db.scalar(lag_stmt) or 0
 
         return {
             "pending_alerts": len(pending_alerts),

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.deps import CurrentUser, get_current_user, require_perm
 from app.core.response import ok, page
+from app.core.scope import assert_alert_access
 from app.db.session import get_db
 from app.services.alert_service import AlertService
 
@@ -126,9 +127,14 @@ def stats(
 
 
 @router.get("/alerts/{alert_id}", summary="预警详情")
-def get_alert(alert_id: int, db: Session = Depends(get_db)):
+def get_alert(
+    alert_id: int,
+    user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     svc = AlertService(db)
     a = svc.get(alert_id)
+    assert_alert_access(user, a)
     d = _out(a)
     d["actions"] = [
         {
@@ -150,6 +156,7 @@ def claim(
     db: Session = Depends(get_db),
 ):
     svc = AlertService(db)
+    assert_alert_access(user, svc.get(alert_id))
     svc.claim(alert_id, user)
     db.commit()
     return ok()
@@ -163,6 +170,7 @@ def close(
     db: Session = Depends(get_db),
 ):
     svc = AlertService(db)
+    assert_alert_access(user, svc.get(alert_id))
     svc.close(alert_id, user, body.reason)
     db.commit()
     return ok()
@@ -176,6 +184,7 @@ def ignore(
     db: Session = Depends(get_db),
 ):
     svc = AlertService(db)
+    assert_alert_access(user, svc.get(alert_id))
     svc.ignore(alert_id, user, body.reason)
     db.commit()
     return ok()
@@ -189,6 +198,7 @@ def transfer(
     db: Session = Depends(get_db),
 ):
     svc = AlertService(db)
+    assert_alert_access(user, svc.get(alert_id))
     svc.transfer(alert_id, user, body.to_user_id)
     db.commit()
     return ok()
