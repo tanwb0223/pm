@@ -50,6 +50,13 @@ class Settings(BaseSettings):
     frontend_serve: bool = False
     frontend_dir: str = "/app/frontend_dist"
 
+    # 数据库自动备份
+    backup_enabled: bool = True          # 是否启用自动备份
+    backup_hour: int = 2                 # 每日几点备份（避开 01:00 快照）
+    backup_minute: int = 0
+    backup_dir: str = "/backup"          # 备份目录（需挂载持久化卷）
+    backup_keep_days: int = 30           # 保留天数
+
     # 定时任务
     scheduler_enabled: bool = False
     daily_scan_hour: int = 1

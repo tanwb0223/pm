@@ -9,7 +9,9 @@
 from __future__ import annotations
 
 import logging
+import os
 from datetime import date
+from pathlib import Path
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -117,6 +119,40 @@ def job_daily_digest() -> None:
         db.close()
 
 
+def job_database_backup() -> None:
+    """每日 02:00：数据库自动备份
+
+    调用容器内 backup.sh，由 pg_dump 生成压缩备份并清理旧文件。
+    备份目录需挂载到持久化卷，否则容器重建会丢失备份。
+    """
+    import subprocess
+
+    script = "/app/backup.sh"
+    if not Path(script).is_file():
+        logger.warning("未找到备份脚本 %s，跳过备份", script)
+        return
+
+    logger.info("开始数据库备份...")
+    try:
+        result = subprocess.run(
+            ["sh", script],
+            capture_output=True,
+            text=True,
+            timeout=1800,
+            env={**os.environ},
+        )
+        for line in (result.stdout or "").strip().splitlines():
+            logger.info("[backup] %s", line)
+        if result.returncode != 0:
+            logger.error("[backup] 备份失败: %s", (result.stderr or "").strip()[:500])
+        else:
+            logger.info("数据库备份完成")
+    except subprocess.TimeoutExpired:
+        logger.error("数据库备份超时（超过 30 分钟）")
+    except Exception:
+        logger.exception("数据库备份异常")
+
+
 # ---------------------------------------------------------------- 启停
 def start_scheduler() -> None:
     global _scheduler
@@ -156,6 +192,14 @@ def start_scheduler() -> None:
         id="daily_digest",
         replace_existing=True,
     )
+    # 每日 02:00 数据库备份（避开 01:00 的快照与扫描）
+    if settings.backup_enabled:
+        _scheduler.add_job(
+            lambda: _with_lock(LOCK_SNAPSHOT_SCAN + 4, job_database_backup),
+            CronTrigger(hour=settings.backup_hour, minute=settings.backup_minute),
+            id="database_backup",
+            replace_existing=True,
+        )
 
     _scheduler.start()
     logger.info("定时任务已启动：%s", [j.id for j in _scheduler.get_jobs()])

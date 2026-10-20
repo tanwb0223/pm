@@ -48,6 +48,7 @@ ENV TZ=Asia/Shanghai \
 RUN apk add --no-cache \
         tzdata \
         libpq \
+        postgresql18-client \
         curl \
         font-wqy-zenhei \
     && cp /usr/share/zoneinfo/$TZ /etc/localtime \
@@ -77,12 +78,14 @@ COPY --from=frontend-builder /build/dist /app/frontend_dist
 
 # ---------------------------------------------------------------- 启动脚本
 COPY docker/entrypoint.sh /entrypoint.sh
-RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
+COPY docker/backup.sh /app/backup.sh
+RUN sed -i 's/\r$//' /entrypoint.sh /app/backup.sh \
+    && chmod +x /entrypoint.sh /app/backup.sh
 
 # ---------------------------------------------------------------- 非 root 运行
 RUN adduser -D -u 1000 pm \
-    && mkdir -p /data/upload /data/log \
-    && chown -R pm:pm /app /data
+    && mkdir -p /data/upload /data/log /backup \
+    && chown -R pm:pm /app /data /backup
 
 USER pm
 

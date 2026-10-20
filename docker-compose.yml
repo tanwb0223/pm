@@ -38,6 +38,12 @@ services:
       # ---------------------------------------------------------- 附件
       PM_UPLOAD_DIR: /data/upload
       PM_UPLOAD_MAX_SIZE_MB: ${PM_UPLOAD_MAX_SIZE_MB:-50}
+      # ---------------------------------------------------------- 数据库备份
+      PM_BACKUP_ENABLED: ${PM_BACKUP_ENABLED:-true}
+      PM_BACKUP_HOUR: ${PM_BACKUP_HOUR:-2}
+      PM_BACKUP_MINUTE: ${PM_BACKUP_MINUTE:-0}
+      PM_BACKUP_DIR: /backup
+      PM_BACKUP_KEEP_DAYS: ${PM_BACKUP_KEEP_DAYS:-30}
       # ---------------------------------------------------------- 定时任务
       PM_SCHEDULER_ENABLED: ${PM_SCHEDULER_ENABLED:-true}
       PM_DAILY_SCAN_HOUR: ${PM_DAILY_SCAN_HOUR:-1}
@@ -54,6 +60,7 @@ services:
     volumes:
       - upload:/data/upload
       - logs:/data/log
+      - backup:/backup
     depends_on:
       db:
         condition: service_healthy
@@ -103,6 +110,8 @@ volumes:
     name: pm-upload
   logs:
     name: pm-logs
+  backup:
+    name: pm-backup
 
 networks:
   pm-net:
