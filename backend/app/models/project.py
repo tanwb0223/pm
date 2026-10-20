@@ -17,10 +17,10 @@ from sqlalchemy import (
     String,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
+from app.db.types import BIGINT_PK, JSON_TYPE, aware_timestamp
 
 
 class ProjMajor(Base):
@@ -35,12 +35,12 @@ class ProjMajor(Base):
         ),
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     type: Mapped[str] = mapped_column(String(32), nullable=False)
     partner_company: Mapped[str | None] = mapped_column(String(255), nullable=True)
     build_period: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    owner_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("sys_user.id"), nullable=True)
+    owner_id: Mapped[int | None] = mapped_column(BIGINT_PK, ForeignKey("sys_user.id"), nullable=True)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="ACTIVE")
 
     # 第 38 项：原始计划（立项时锁定）
@@ -58,16 +58,15 @@ class ProjMajor(Base):
 
     # 第 42 项预留：后评价
     evaluation_score: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
-    evaluation_note: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    evaluation_note: Mapped[dict | None] = mapped_column(JSON_TYPE, nullable=True)
 
     # 完整性检查结果缓存
-    incomplete_reason: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    incomplete_reason: Mapped[dict | None] = mapped_column(JSON_TYPE, nullable=True)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    created_at: Mapped[datetime] = aware_timestamp(server_default=func.now())
+    updated_at: Mapped[datetime] = aware_timestamp(server_default=func.now(), onupdate=func.now()
     )
-    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_at: Mapped[datetime | None] = aware_timestamp(nullable=True)
 
     owner: Mapped["SysUser | None"] = relationship(foreign_keys=[owner_id], lazy="joined")
 
@@ -86,7 +85,7 @@ class ProjMajorCollege(Base):
     college_owner_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("sys_user.id"), nullable=True
     )
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = aware_timestamp(server_default=func.now())
 
 
 class ProjSub(Base):
@@ -104,11 +103,11 @@ class ProjSub(Base):
         ),
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
-    major_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("proj_major.id"), nullable=False)
-    college_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("sys_college.id"), nullable=False)
+    id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True)
+    major_id: Mapped[int] = mapped_column(BIGINT_PK, ForeignKey("proj_major.id"), nullable=False)
+    college_id: Mapped[int] = mapped_column(BIGINT_PK, ForeignKey("sys_college.id"), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    owner_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("sys_user.id"), nullable=True)
+    owner_id: Mapped[int | None] = mapped_column(BIGINT_PK, ForeignKey("sys_user.id"), nullable=True)
     plan_start: Mapped[date | None] = mapped_column(Date, nullable=True)
     plan_end: Mapped[date | None] = mapped_column(Date, nullable=True)
     original_start: Mapped[date | None] = mapped_column(Date, nullable=True)
@@ -116,15 +115,14 @@ class ProjSub(Base):
     weight: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="NOT_STARTED")
     current_progress: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    last_update_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_update_at: Mapped[datetime | None] = aware_timestamp(nullable=True)
+    closed_at: Mapped[datetime | None] = aware_timestamp(nullable=True)
     acceptance_status: Mapped[str] = mapped_column(String(16), nullable=False, default="NOT_REQUIRED")
 
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    created_at: Mapped[datetime] = aware_timestamp(server_default=func.now())
+    updated_at: Mapped[datetime] = aware_timestamp(server_default=func.now(), onupdate=func.now()
     )
-    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_at: Mapped[datetime | None] = aware_timestamp(nullable=True)
 
     major: Mapped[ProjMajor] = relationship(lazy="joined")
     owner: Mapped["SysUser | None"] = relationship(foreign_keys=[owner_id], lazy="joined")
@@ -136,18 +134,18 @@ class ProgRecord(Base):
     __tablename__ = "prog_record"
     __table_args__ = (CheckConstraint("progress BETWEEN 0 AND 100", name="ck_record_progress"),)
 
-    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
-    sub_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("proj_sub.id"), nullable=False)
+    id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True)
+    sub_id: Mapped[int] = mapped_column(BIGINT_PK, ForeignKey("proj_sub.id"), nullable=False)
     progress: Mapped[int] = mapped_column(Integer, nullable=False)
     note: Mapped[str | None] = mapped_column(String(500), nullable=True)
     is_no_change: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_rollback: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     rollback_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    operator_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("sys_user.id"), nullable=False)
+    operator_id: Mapped[int] = mapped_column(BIGINT_PK, ForeignKey("sys_user.id"), nullable=False)
     on_behalf_of: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("sys_user.id"), nullable=True
     )
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = aware_timestamp(server_default=func.now())
 
 
 class ProgSnapshot(Base):

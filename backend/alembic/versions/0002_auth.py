@@ -2,6 +2,15 @@
 from __future__ import annotations
 
 from alembic import op
+
+from alembic_helpers import (
+    cmt,
+    col_cmt,
+    json_column,
+    now_default,
+    pk_column,
+    upsert_text,
+)
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
@@ -14,7 +23,7 @@ depends_on = None
 def upgrade() -> None:
     op.create_table(
         "auth_provider",
-        sa.Column("id", sa.BigInteger(), sa.Identity(always=True), primary_key=True),
+        pk_column(),
         sa.Column("kind", sa.String(32), nullable=False, unique=True),
         sa.Column("enabled", sa.Boolean(), nullable=False, server_default="false"),
         sa.Column("display_name", sa.String(64), nullable=False, server_default=""),
@@ -23,14 +32,14 @@ def upgrade() -> None:
         sa.Column("client_secret_enc", sa.Text(), nullable=True),
         sa.Column("scopes", sa.String(255), nullable=False, server_default=""),
         sa.Column("server_url", sa.String(255), nullable=False, server_default=""),
-        sa.Column("extra", postgresql.JSONB(), nullable=False, server_default=sa.text("'{}'::jsonb")),
+        json_column("extra", nullable=False, server_default=sa.text("'{}'")),
         sa.Column("auto_create_user", sa.Boolean(), nullable=False, server_default="true"),
         sa.Column("default_role_id", sa.BigInteger(), nullable=True),
         sa.Column("sort", sa.Integer(), nullable=False, server_default="0"),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=now_default(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=now_default(), nullable=False),
     )
-    op.execute("COMMENT ON TABLE auth_provider IS '认证提供方配置：一种协议一行，可同时启用多个'")
+    cmt("auth_provider", "认证提供方配置：一种协议一行，可同时启用多个")
 
     op.create_table(
         "auth_login_state",
@@ -44,25 +53,25 @@ def upgrade() -> None:
         sa.Column("bind_user_id", sa.BigInteger(), nullable=True),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("consumed_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=now_default(), nullable=False),
     )
     op.create_index("idx_login_state_expires", "auth_login_state", ["expires_at"])
     op.create_index("idx_login_state_code", "auth_login_state", ["login_code"])
-    op.execute("COMMENT ON TABLE auth_login_state IS '登录流程态：state+nonce+PKCE+一次性登录码'")
+    cmt("auth_login_state", "登录流程态：state+nonce+PKCE+一次性登录码")
 
     op.create_table(
         "auth_identity",
-        sa.Column("id", sa.BigInteger(), sa.Identity(always=True), primary_key=True),
+        pk_column(),
         sa.Column("user_id", sa.BigInteger(), sa.ForeignKey("sys_user.id"), nullable=False),
         sa.Column("provider_id", sa.BigInteger(), sa.ForeignKey("auth_provider.id"), nullable=False),
         sa.Column("subject", sa.String(255), nullable=False),
-        sa.Column("claims", postgresql.JSONB(), nullable=False, server_default=sa.text("'{}'::jsonb")),
+        json_column("claims", nullable=False, server_default=sa.text("'{}'")),
         sa.Column("last_login_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=now_default(), nullable=False),
         sa.UniqueConstraint("provider_id", "subject", name="uq_identity_provider_subject"),
     )
     op.create_index("idx_identity_user", "auth_identity", ["user_id"])
-    op.execute("COMMENT ON TABLE auth_identity IS '第三方身份绑定：一个用户可绑定多个第三方账号'")
+    cmt("auth_identity", "第三方身份绑定：一个用户可绑定多个第三方账号")
 
     # 初始化 9 种认证方式，默认只启用本地密码
     kinds = [
@@ -78,8 +87,7 @@ def upgrade() -> None:
     ]
     for kind, name, enabled, sort in kinds:
         op.execute(
-            sa.text(
-                "INSERT INTO auth_provider (kind, display_name, enabled, sort) "
+            upsert_text("INSERT INTO auth_provider (kind, display_name, enabled, sort) "
                 "VALUES (:k, :n, :e, :s) ON CONFLICT (kind) DO NOTHING"
             ).bindparams(k=kind, n=name, e=enabled, s=sort)
         )

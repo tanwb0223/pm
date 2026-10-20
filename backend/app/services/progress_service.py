@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import BusinessError, ForbiddenError, NotFoundError
 from app.core.scope import apply_scope
+from app.db.dialect import ilike
 from app.models.project import ProgRecord, ProgSnapshot, ProjMajor, ProjSub
 from app.models.system import SysCollege, SysUser
 from app.services.aggregation_service import AggregationService
@@ -186,7 +187,7 @@ class ProgressService:
         if owner_id:
             stmt = stmt.where(ProjSub.owner_id == owner_id)
         if keyword:
-            stmt = stmt.where(ProjSub.name.ilike(f"%{keyword}%"))
+            stmt = stmt.where(ilike(ProjSub.name, keyword))
 
         subs = list(self.db.scalars(stmt))
         today = date.today()

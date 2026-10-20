@@ -14,7 +14,8 @@ pm/
 │   ├── 开发方案.md                                    技术选型、数据模型、工作量
 │   ├── Linux原生部署指南.md                            Linux 部署（含内网离线）
 │   ├── Windows部署指南.md                              Windows 部署（含内网离线）
-│   └── 服务器配置建议.md                               配置选型与参数调优
+│   ├── 服务器配置建议.md                               配置选型与参数调优
+│   └── 数据库双支持说明.md                             SQLite / PostgreSQL 切换与差异
 ├── backend/                    FastAPI + PostgreSQL 后端（84 个 API）
 ├── frontend/                   React 18 + TypeScript + Ant Design 5 前端（21 个页面）
 ├── pack.sh                     离线打包（同时产出 Linux 与 Windows 部署包）
@@ -28,7 +29,7 @@ pm/
 | 层 | 技术 |
 |---|---|
 | 后端 | Python 3.12 · FastAPI 0.146 · SQLAlchemy 2.1（同步） · Alembic · psycopg 3 |
-| 数据库 | PostgreSQL 18+ |
+| 数据库 | **SQLite（默认，零依赖）** 或 PostgreSQL 18+（可选） |
 | 前端 | React 18 · TypeScript 5 · Ant Design 5 · TanStack Query 5 · zustand · ECharts |
 | 构建 | Vite 5 |
 | 认证 | 9 种协议（密码 / OIDC / OAuth2 / CAS / SAML2 / LDAP / 飞书 / 钉钉 / 企业微信） |

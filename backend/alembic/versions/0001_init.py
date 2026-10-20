@@ -18,6 +18,18 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
+from alembic_helpers import (
+    cmt as _h_cmt,
+    col_cmt as _h_col_cmt,
+    gin_index,
+    is_postgres,
+    json_column,
+    pk_column,
+    create_extensions,
+    now_default,
+    upsert_text,
+)
+
 # revision identifiers
 revision = "0001_init"
 down_revision = None
@@ -29,20 +41,19 @@ depends_on = None
 def _timestamps():
     """通用审计时间字段"""
     return [
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=now_default(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=now_default(), nullable=False),
     ]
 
 
 def cmt(table: str, text: str):
-    """安全地写表注释（避免引号问题）"""
-    safe = text.replace("'", "''")
-    op.execute(f"COMMENT ON TABLE {table} IS '{safe}'")
+    """表注释（SQLite 上自动跳过）"""
+    _h_cmt(table, text)
 
 
 def col_cmt(table: str, column: str, text: str):
-    safe = text.replace("'", "''")
-    op.execute(f"COMMENT ON COLUMN {table}.{column} IS '{safe}'")
+    """列注释（SQLite 上自动跳过）"""
+    _h_col_cmt(table, column, text)
 
 
 # ---------------------------------------------------------------- upgrade
@@ -50,7 +61,7 @@ def upgrade() -> None:
     # ============================================================ 组织与权限
     op.create_table(
         "sys_college",
-        sa.Column("id", sa.BigInteger(), sa.Identity(always=True), primary_key=True),
+        pk_column(),
         sa.Column("name", sa.String(128), nullable=False),
         sa.Column("code", sa.String(32), nullable=True, unique=True),
         sa.Column("parent_id", sa.BigInteger(), sa.ForeignKey("sys_college.id"), nullable=True),
@@ -62,7 +73,7 @@ def upgrade() -> None:
 
     op.create_table(
         "sys_user",
-        sa.Column("id", sa.BigInteger(), sa.Identity(always=True), primary_key=True),
+        pk_column(),
         sa.Column("staff_no", sa.String(32), nullable=False, unique=True),
         sa.Column("name", sa.String(64), nullable=False),
         sa.Column("college_id", sa.BigInteger(), sa.ForeignKey("sys_college.id"), nullable=True),
@@ -80,7 +91,7 @@ def upgrade() -> None:
 
     op.create_table(
         "sys_role",
-        sa.Column("id", sa.BigInteger(), sa.Identity(always=True), primary_key=True),
+        pk_column(),
         sa.Column("code", sa.String(64), nullable=False, unique=True),
         sa.Column("name", sa.String(64), nullable=False),
         sa.Column("is_system", sa.Boolean(), nullable=False, server_default=sa.text("false")),
@@ -91,14 +102,14 @@ def upgrade() -> None:
 
     op.create_table(
         "sys_user_role",
-        sa.Column("id", sa.BigInteger(), sa.Identity(always=True), primary_key=True),
+        pk_column(),
         sa.Column("user_id", sa.BigInteger(), sa.ForeignKey("sys_user.id"), nullable=False),
         sa.Column("role_id", sa.BigInteger(), sa.ForeignKey("sys_role.id"), nullable=False),
         sa.Column("scope_type", sa.String(16), nullable=False),
         sa.Column("scope_id", sa.BigInteger(), nullable=True),
         sa.Column("valid_from", sa.Date(), nullable=True),
         sa.Column("valid_to", sa.Date(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=now_default(), nullable=False),
         sa.CheckConstraint(
             "scope_type IN ('ALL','MAJOR','COLLEGE','SELF','CUSTOM')",
             name="ck_user_role_scope",
@@ -113,7 +124,7 @@ def upgrade() -> None:
 
     op.create_table(
         "sys_permission",
-        sa.Column("id", sa.BigInteger(), sa.Identity(always=True), primary_key=True),
+        pk_column(),
         sa.Column("code", sa.String(128), nullable=False, unique=True),
         sa.Column("name", sa.String(64), nullable=False),
         sa.Column("type", sa.String(16), nullable=False),
@@ -133,7 +144,7 @@ def upgrade() -> None:
     # ============================================================ 项目与进度
     op.create_table(
         "proj_major",
-        sa.Column("id", sa.BigInteger(), sa.Identity(always=True), primary_key=True),
+        pk_column(),
         sa.Column("name", sa.String(255), nullable=False),
         sa.Column("type", sa.String(32), nullable=False),
         sa.Column("partner_company", sa.String(255), nullable=True),
@@ -152,9 +163,9 @@ def upgrade() -> None:
         sa.Column("budget_used", sa.Numeric(14, 2), nullable=True),
         # 第 42 项预留：后评价
         sa.Column("evaluation_score", sa.Numeric(5, 2), nullable=True),
-        sa.Column("evaluation_note", postgresql.JSONB(), nullable=True),
+        json_column("evaluation_note", nullable=True),
         # 完整性检查结果缓存
-        sa.Column("incomplete_reason", postgresql.JSONB(), nullable=True),
+        json_column("incomplete_reason", nullable=True),
         *_timestamps(),
         sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
         sa.CheckConstraint("status IN ('ACTIVE','CLOSED','ABORTED')", name="ck_major_status"),
@@ -179,14 +190,14 @@ def upgrade() -> None:
         sa.Column("major_id", sa.BigInteger(), sa.ForeignKey("proj_major.id"), primary_key=True),
         sa.Column("college_id", sa.BigInteger(), sa.ForeignKey("sys_college.id"), primary_key=True),
         sa.Column("college_owner_id", sa.BigInteger(), sa.ForeignKey("sys_user.id"), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=now_default(), nullable=False),
     )
     op.create_index("idx_major_college_college", "proj_major_college", ["college_id"])
     cmt("proj_major_college", "大项目 ↔ 参与学院（多对多）")
 
     op.create_table(
         "proj_sub",
-        sa.Column("id", sa.BigInteger(), sa.Identity(always=True), primary_key=True),
+        pk_column(),
         sa.Column("major_id", sa.BigInteger(), sa.ForeignKey("proj_major.id"), nullable=False),
         sa.Column("college_id", sa.BigInteger(), sa.ForeignKey("sys_college.id"), nullable=False),
         sa.Column("name", sa.String(255), nullable=False),
@@ -226,7 +237,7 @@ def upgrade() -> None:
 
     op.create_table(
         "prog_record",
-        sa.Column("id", sa.BigInteger(), sa.Identity(always=True), primary_key=True),
+        pk_column(),
         sa.Column("sub_id", sa.BigInteger(), sa.ForeignKey("proj_sub.id"), nullable=False),
         sa.Column("progress", sa.Integer(), nullable=False),
         sa.Column("note", sa.String(500), nullable=True),
@@ -235,7 +246,7 @@ def upgrade() -> None:
         sa.Column("rollback_reason", sa.String(500), nullable=True),
         sa.Column("operator_id", sa.BigInteger(), sa.ForeignKey("sys_user.id"), nullable=False),
         sa.Column("on_behalf_of", sa.BigInteger(), sa.ForeignKey("sys_user.id"), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=now_default(), nullable=False),
         sa.CheckConstraint("progress BETWEEN 0 AND 100", name="ck_record_progress"),
     )
     op.create_index("idx_record_sub_time", "prog_record", ["sub_id", "created_at"])
@@ -262,13 +273,13 @@ def upgrade() -> None:
     # ============================================================ 报表与材料
     op.create_table(
         "report",
-        sa.Column("id", sa.BigInteger(), sa.Identity(always=True), primary_key=True),
+        pk_column(),
         sa.Column("sub_id", sa.BigInteger(), sa.ForeignKey("proj_sub.id"), nullable=False),
         sa.Column("type", sa.String(8), nullable=False),
         sa.Column("period_start", sa.Date(), nullable=False),
         sa.Column("period_end", sa.Date(), nullable=False),
         sa.Column("progress", sa.Integer(), nullable=True),
-        sa.Column("content", postgresql.JSONB(), nullable=False),
+        json_column("content", nullable=False),
         sa.Column("submitted_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("submitted_by", sa.BigInteger(), sa.ForeignKey("sys_user.id"), nullable=True),
         sa.Column("status", sa.String(16), nullable=False, server_default="DRAFT"),
@@ -276,7 +287,7 @@ def upgrade() -> None:
         sa.Column("void_reason", sa.String(500), nullable=True),
         sa.Column("voided_by", sa.BigInteger(), sa.ForeignKey("sys_user.id"), nullable=True),
         sa.Column("voided_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=now_default(), nullable=False),
         sa.CheckConstraint("type IN ('DAILY','WEEKLY','MONTHLY')", name="ck_report_type"),
         sa.CheckConstraint("status IN ('DRAFT','SUBMITTED','VOIDED')", name="ck_report_status"),
         sa.UniqueConstraint("sub_id", "type", "period_start", name="uq_report_period"),
@@ -284,12 +295,12 @@ def upgrade() -> None:
     op.create_index("idx_report_period", "report", ["type", "period_start"])
     op.create_index("idx_report_sub", "report", ["sub_id", "type", "period_start"])
     op.create_index("idx_report_status", "report", ["status"])
-    op.execute("CREATE INDEX idx_report_content ON report USING GIN (content)")
+    gin_index("report", "content", "idx_report_content")
     cmt("report", "日报/周报/月报（一张表，content 存各自特有字段）")
 
     op.create_table(
         "attachment",
-        sa.Column("id", sa.BigInteger(), sa.Identity(always=True), primary_key=True),
+        pk_column(),
         sa.Column("biz_type", sa.String(32), nullable=False),
         sa.Column("biz_id", sa.BigInteger(), nullable=False),
         sa.Column("file_name", sa.String(255), nullable=False),
@@ -297,14 +308,14 @@ def upgrade() -> None:
         sa.Column("file_size", sa.BigInteger(), nullable=False),
         sa.Column("mime_type", sa.String(128), nullable=True),
         sa.Column("uploader_id", sa.BigInteger(), sa.ForeignKey("sys_user.id"), nullable=False),
-        sa.Column("uploaded_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("uploaded_at", sa.DateTime(timezone=True), server_default=now_default(), nullable=False),
     )
     op.create_index("idx_att_biz", "attachment", ["biz_type", "biz_id"])
     cmt("attachment", "附件统一表（报表/风险/项目）")
 
     op.create_table(
         "sys_holiday",
-        sa.Column("id", sa.BigInteger(), sa.Identity(always=True), primary_key=True),
+        pk_column(),
         sa.Column("date", sa.Date(), nullable=False, unique=True),
         sa.Column("type", sa.String(16), nullable=False),
         sa.Column("name", sa.String(64), nullable=True),
@@ -316,7 +327,7 @@ def upgrade() -> None:
     # ============================================================ 预警与督办
     op.create_table(
         "alert",
-        sa.Column("id", sa.BigInteger(), sa.Identity(always=True), primary_key=True),
+        pk_column(),
         sa.Column("alert_type", sa.String(8), nullable=False),
         sa.Column("level", sa.String(8), nullable=False),
         sa.Column("status", sa.String(16), nullable=False, server_default="PENDING"),
@@ -333,7 +344,7 @@ def upgrade() -> None:
         sa.Column("escalated_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("dedup_key", sa.String(128), nullable=False),
         sa.Column("merged_count", sa.Integer(), nullable=False, server_default="1"),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=now_default(), nullable=False),
         sa.CheckConstraint("level IN ('RED','ORANGE','YELLOW')", name="ck_alert_level"),
         sa.CheckConstraint("status IN ('PENDING','CLAIMED','CLOSED','IGNORED')", name="ck_alert_status"),
         sa.CheckConstraint("alert_type IN ('AL-01','AL-02','AL-03','AL-04','AL-05','AL-06',"
@@ -351,12 +362,12 @@ def upgrade() -> None:
 
     op.create_table(
         "alert_action",
-        sa.Column("id", sa.BigInteger(), sa.Identity(always=True), primary_key=True),
+        pk_column(),
         sa.Column("alert_id", sa.BigInteger(), sa.ForeignKey("alert.id"), nullable=False),
         sa.Column("action", sa.String(16), nullable=False),
         sa.Column("operator_id", sa.BigInteger(), sa.ForeignKey("sys_user.id"), nullable=False),
         sa.Column("reason", sa.String(500), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=now_default(), nullable=False),
         sa.CheckConstraint(
             "action IN ('CLAIM','TRANSFER','CLOSE','IGNORE','ESCALATE')", name="ck_action_type"
         ),
@@ -366,7 +377,7 @@ def upgrade() -> None:
 
     op.create_table(
         "risk",
-        sa.Column("id", sa.BigInteger(), sa.Identity(always=True), primary_key=True),
+        pk_column(),
         sa.Column("major_id", sa.BigInteger(), sa.ForeignKey("proj_major.id"), nullable=False),
         sa.Column("sub_id", sa.BigInteger(), sa.ForeignKey("proj_sub.id"), nullable=True),
         sa.Column("level", sa.String(8), nullable=False),
@@ -390,21 +401,21 @@ def upgrade() -> None:
         sa.Column("value", sa.String(500), nullable=False),
         sa.Column("value_type", sa.String(16), nullable=False, server_default="STRING"),
         sa.Column("remark", sa.String(255), nullable=True),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=now_default(), nullable=False),
     )
     cmt("sys_config", "系统参数（阈值、时限、开关、通知渠道）")
 
     op.create_table(
         "audit_log",
-        sa.Column("id", sa.BigInteger(), sa.Identity(always=True), primary_key=True),
+        pk_column(),
         sa.Column("operator_id", sa.BigInteger(), nullable=True),
         sa.Column("action", sa.String(64), nullable=False),
         sa.Column("target_type", sa.String(64), nullable=True),
         sa.Column("target_id", sa.BigInteger(), nullable=True),
-        sa.Column("detail", postgresql.JSONB(), nullable=True),
+        json_column("detail", nullable=True),
         sa.Column("ip", sa.String(64), nullable=True),
         sa.Column("user_agent", sa.String(255), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=now_default(), nullable=False),
     )
     op.create_index("idx_audit_time", "audit_log", ["created_at"])
     op.create_index("idx_audit_op", "audit_log", ["operator_id", "created_at"])
@@ -413,14 +424,14 @@ def upgrade() -> None:
 
     op.create_table(
         "notify_log",
-        sa.Column("id", sa.BigInteger(), sa.Identity(always=True), primary_key=True),
+        pk_column(),
         sa.Column("biz_type", sa.String(32), nullable=False),
         sa.Column("biz_id", sa.BigInteger(), nullable=True),
         sa.Column("channel", sa.String(16), nullable=False),
         sa.Column("receiver_id", sa.BigInteger(), sa.ForeignKey("sys_user.id"), nullable=False),
         sa.Column("status", sa.String(16), nullable=False),
         sa.Column("error", sa.String(500), nullable=True),
-        sa.Column("sent_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("sent_at", sa.DateTime(timezone=True), server_default=now_default(), nullable=False),
         sa.CheckConstraint("channel IN ('INNER','EMAIL','SMS')", name="ck_notify_channel"),
         sa.CheckConstraint("status IN ('SUCCESS','FAILED')", name="ck_notify_status"),
     )
@@ -432,14 +443,14 @@ def upgrade() -> None:
     # 一期不建也不影响；如确定要做二期验收，取消下面注释即可
     op.create_table(
         "proj_acceptance",
-        sa.Column("id", sa.BigInteger(), sa.Identity(always=True), primary_key=True),
+        pk_column(),
         sa.Column("major_id", sa.BigInteger(), sa.ForeignKey("proj_major.id"), nullable=False),
         sa.Column("sub_id", sa.BigInteger(), sa.ForeignKey("proj_sub.id"), nullable=True),
         sa.Column("org", sa.String(128), nullable=True),
         sa.Column("accept_date", sa.Date(), nullable=True),
         sa.Column("result", sa.String(16), nullable=False, server_default="PENDING"),
         sa.Column("conclusion", sa.Text(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=now_default(), nullable=False),
         sa.CheckConstraint(
             "result IN ('PENDING','PASSED','RECTIFYING','REJECTED')", name="ck_acceptance_result"
         ),
@@ -449,7 +460,7 @@ def upgrade() -> None:
 
     op.create_table(
         "proj_rectify",
-        sa.Column("id", sa.BigInteger(), sa.Identity(always=True), primary_key=True),
+        pk_column(),
         sa.Column("acceptance_id", sa.BigInteger(), sa.ForeignKey("proj_acceptance.id"), nullable=False),
         sa.Column("content", sa.Text(), nullable=False),
         sa.Column("owner_id", sa.BigInteger(), sa.ForeignKey("sys_user.id"), nullable=True),
@@ -464,7 +475,7 @@ def upgrade() -> None:
 
     op.create_table(
         "proj_evaluation",
-        sa.Column("id", sa.BigInteger(), sa.Identity(always=True), primary_key=True),
+        pk_column(),
         sa.Column("major_id", sa.BigInteger(), sa.ForeignKey("proj_major.id"), nullable=False),
         sa.Column("indicator_code", sa.String(64), nullable=False),
         sa.Column("indicator_name", sa.String(128), nullable=False),
@@ -494,8 +505,7 @@ def _seed() -> None:
     ]
     for code, name, is_sys in roles:
         op.execute(
-            sa.text(
-                "INSERT INTO sys_role (code, name, is_system) VALUES (:c, :n, :s) "
+            upsert_text("INSERT INTO sys_role (code, name, is_system) VALUES (:c, :n, :s) "
                 "ON CONFLICT (code) DO NOTHING"
             ).bindparams(c=code, n=name, s=is_sys)
         )
@@ -543,8 +553,7 @@ def _seed() -> None:
     ]
     for k, v, t, remark in configs:
         op.execute(
-            sa.text(
-                "INSERT INTO sys_config (key, value, value_type, remark) VALUES (:k, :v, :t, :r) "
+            upsert_text("INSERT INTO sys_config (key, value, value_type, remark) VALUES (:k, :v, :t, :r) "
                 "ON CONFLICT (key) DO NOTHING"
             ).bindparams(k=k, v=v, t=t, r=remark)
         )
@@ -593,8 +602,7 @@ def _seed() -> None:
     ]
     for code, name, typ, parent in perms:
         op.execute(
-            sa.text(
-                "INSERT INTO sys_permission (code, name, type, parent_id) "
+            upsert_text("INSERT INTO sys_permission (code, name, type, parent_id) "
                 "VALUES (:c, :n, :t, (SELECT id FROM sys_permission WHERE code = :p)) "
                 "ON CONFLICT (code) DO NOTHING"
             ).bindparams(c=code, n=name, t=typ, p=parent)
@@ -622,8 +630,7 @@ def _seed() -> None:
     for role_code in ("PROJECT_OWNER", "MAJOR_OWNER", "COLLEGE_OWNER", "SUB_OWNER", "REPORTER", "VIEWER"):
         for pc in viewer_perms:
             op.execute(
-                sa.text(
-                    "INSERT INTO sys_role_permission (role_id, permission_id) "
+                upsert_text("INSERT INTO sys_role_permission (role_id, permission_id) "
                     "SELECT r.id, p.id FROM sys_role r, sys_permission p "
                     "WHERE r.code = :rc AND p.code = :pc ON CONFLICT DO NOTHING"
                 ).bindparams(rc=role_code, pc=pc)

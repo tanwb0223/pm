@@ -26,8 +26,11 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 30
     algorithm: str = "HS256"
 
-    # 数据库
-    database_url: str = "postgresql+psycopg://postgres:123@localhost:5432/pm_dev"
+    # ---------------------------------------------------------------- 数据库
+    # 留空则自动使用 SQLite（零依赖，解压即用）
+    # 需要 PostgreSQL 时显式指定：
+    #   PM_DATABASE_URL=postgresql+psycopg://user:pass@host:5432/dbname
+    database_url: str = ""
 
     # 邮件
     smtp_host: str = ""
@@ -118,6 +121,12 @@ class Settings(BaseSettings):
         # 4. 前端产物目录
         if not self.frontend_dir:
             self.frontend_dir = str(_PROJECT_ROOT.parent / "frontend" / "dist")
+
+        # 5. 数据库连接串
+        # 未配置时默认用 SQLite（零依赖），配置了就用配置的
+        if not self.database_url:
+            db_file = data_root / "pm.db"
+            self.database_url = f"sqlite:///{db_file.as_posix()}"
 
     @property
     def log_dir(self) -> Path:

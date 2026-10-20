@@ -29,18 +29,24 @@ LOCK_SNAPSHOT_SCAN = 2026100101
 
 
 def _with_lock(lock_id: int, func, *args, **kwargs):
-    """用 PG advisory lock 保证多实例下只有一个执行"""
+    """跨进程互斥执行
+
+    PostgreSQL 用 advisory lock（多实例安全）
+    SQLite 用文件锁（单机多进程安全）
+    具体由 DatabaseLock 按当前数据库类型自动选择。
+    """
+    from app.db.dialect import DatabaseLock
+
     db = SessionLocal()
+    lock = DatabaseLock(db, lock_id)
     try:
-        got = db.execute(text("SELECT pg_try_advisory_lock(:id)"), {"id": lock_id}).scalar()
-        if not got:
+        if not lock.acquire():
             logger.debug("任务 %s 已被其他实例执行，跳过", func.__name__)
             return
         try:
             func(*args, **kwargs)
         finally:
-            db.execute(text("SELECT pg_advisory_unlock(:id)"), {"id": lock_id})
-            db.commit()
+            lock.release()
     except Exception:
         logger.exception("定时任务执行失败：%s", func.__name__)
     finally:

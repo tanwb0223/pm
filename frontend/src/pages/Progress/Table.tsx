@@ -14,6 +14,7 @@ import {
   Space,
   Switch,
   Table,
+  Tabs,
   Tag,
   Tooltip,
   message,
@@ -22,6 +23,7 @@ import type { ColumnsType } from 'antd/es/table'
 import { DownloadOutlined } from '@ant-design/icons'
 
 import PageHeader from '@/components/PageHeader'
+import AttachmentPanel from '@/components/AttachmentPanel'
 import SubTrendDrawer from '@/components/SubTrendDrawer'
 import { DeviationText, SubStatusTag } from '@/components/Tags'
 import { exportApi, progressApi, subApi } from '@/api'
@@ -380,7 +382,25 @@ export default function ProgressTablePage() {
         dataSource={data?.items ?? []}
         scroll={{ x: 1240 }}
         expandable={{
-          expandedRowRender: (r) => <RecordList subId={r.id} />,
+          expandedRowRender: (r) => (
+            <Tabs
+              size="small"
+              items={[
+                {
+                  key: 'records',
+                  label: '进度留痕',
+                  children: <RecordList subId={r.id} />,
+                },
+                {
+                  key: 'attachments',
+                  label: '附件材料',
+                  children: (
+                    <AttachmentPanel bizType="SUB" bizId={r.id} />
+                  ),
+                },
+              ]}
+            />
+          ),
         }}
         pagination={{
           current: page,

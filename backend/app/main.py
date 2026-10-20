@@ -83,6 +83,7 @@ def health():
 
 from app.api.v1 import auth as auth_router  # noqa: E402
 from app.api.v1 import alert as alert_router  # noqa: E402
+from app.api.v1 import attachment as attachment_router  # noqa: E402
 from app.api.v1 import export as export_router  # noqa: E402
 from app.api.v1 import risk as risk_router  # noqa: E402
 from app.api.v1 import system as system_router  # noqa: E402
@@ -94,6 +95,7 @@ app.include_router(auth_router.router)
 app.include_router(project_router.router)
 app.include_router(progress_router.router)
 app.include_router(alert_router.router)
+app.include_router(attachment_router.router)
 app.include_router(report_router.router)
 app.include_router(export_router.router)
 app.include_router(risk_router.router)
@@ -147,6 +149,12 @@ else:
 # ---------------------------------------------------------------- 启动/关闭
 @app.on_event("startup")
 def on_startup():
+    # SQLite 首次运行：自动建表 + 灌基础数据
+    from app.db.session import init_db, init_seed_data
+
+    init_db()
+    init_seed_data()
+
     logger.info("%s 启动完成", settings.app_name)
     from app.jobs.scheduler import start_scheduler
 

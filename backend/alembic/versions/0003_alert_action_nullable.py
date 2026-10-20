@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from alembic import op
 
+from alembic_helpers import cmt, col_cmt, json_column, pk_column
+
 revision = "0003_alert_nullable"
 down_revision = "0002_auth"
 branch_labels = None
@@ -17,8 +19,10 @@ depends_on = None
 def upgrade() -> None:
     # 系统自动动作（超时升级等）没有操作人，operator_id 需允许为空
     op.alter_column("alert_action", "operator_id", nullable=True)
-    op.execute(
-        "COMMENT ON COLUMN alert_action.operator_id IS '操作人；系统自动动作（如超时升级）为空'"
+    col_cmt(
+        "alert_action",
+        "operator_id",
+        "操作人；系统自动动作（如超时升级）为空",
     )
 
 

@@ -106,3 +106,9 @@ backend/fonts/*.otf
 .git-commit-msg.txt
 .acl-recovery/
 .work/
+
+# 打包产物（体积大，不入库）
+pm-windows-portable.zip
+pm-linux-portable.tar.gz
+pm-offline-*.zip
+pm-offline-*.tar.gz

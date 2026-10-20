@@ -39,56 +39,51 @@ $env:PATH += ";C:\Program Files\PostgreSQL\18\bin"
 
 ## 二、打包（在能联网的机器上）
 
-在 **Linux 或 macOS** 上执行（需要 Python 3.12 + Node 18+）：
+### 2.1 准备源码
+
+**不需要 git**。把源码目录整个拷到打包机即可（U 盘 / 共享盘 / 解压压缩包）。
+
+### 2.2 执行打包
+
+**Windows 打包机**（推荐，用 PowerShell）：
+
+```powershell
+cd pm
+.\pack.ps1 -Target windows    # 只打 Windows
+.\pack.ps1                    # 双平台都打
+```
+
+**Linux / macOS 打包机**：
 
 ```bash
-git clone https://github.com/tanwb0223/pm.git
 cd pm
-
-# 打包 Windows 版
 bash pack.sh windows
 ```
 
-产出：**`pm-offline-windows.zip`**（约 100 MB）
+### 2.3 打包机需要什么
 
-内部结构：
+| 依赖 | 用途 | 必需 |
+|---|---|---|
+| Python 3.12 | 下载与目标平台匹配的 wheel | ✅ 必须 |
+| Node.js 18+ | 构建前端（`frontend/dist` 已存在则跳过） | 视情况 |
+| 网络 | 从 pypi.org 下载依赖 | ✅ 必须 |
+
+**不需要 git**，也不需要目标平台的操作系统。
+
+### 2.4 产出
+
+**`pm-offline-windows.zip`**（约 100 MB）
 
 ```
 package/
 ├── app/                    后端源码
 ├── frontend/dist/          前端产物
-├── wheels/                 Windows 平台的 Python 依赖（.whl）
+├── wheels/                 Windows 平台的依赖（win_amd64）
 └── install.ps1             一键安装脚本
 ```
 
-> **注意**：`wheels/` 里的包是 `win_amd64` 平台的，与 Linux 的不通用。
-
-### 如果只有 Windows 打包机
-
-在 Windows 上用 Git Bash 执行同样的命令：
-
-```bash
-# 安装 Git for Windows 后，用 Git Bash
-bash pack.sh windows
-```
-
-或手动打包：
-
-```powershell
-# 1. 构建前端
-cd frontend
-npm ci
-npm run build
-cd ..
-
-# 2. 下载依赖
-python -m pip download -r backend/requirements-prod.txt -d wheels `
-    --only-binary=:all: --platform win_amd64 --python-version 312 --abi cp312
-
-# 3. 组装（手动复制目录）
-```
-
----
+> **注意**：`wheels/` 里的包带 `win_amd64` 标记，与 Linux 的不通用。
+> 这是正常的——C 扩展必须与目标平台匹配，打包脚本会自动按目标平台下载。
 
 ## 三、内网部署
 

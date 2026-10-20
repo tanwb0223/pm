@@ -9,14 +9,18 @@
 ```
 能联网的机器                     内网 Linux 服务器
 ──────────────                   ─────────────────
-bash pack-linux.sh
+拷贝源码目录（不用 git）
         ↓
-pm-linux-offline.tar.gz  ──拷贝──→  tar xzf
+bash pack.sh
+        ↓
+pm-offline-linux.tar.gz  ──拷贝──→  tar xzf
                                       ↓
                                    sudo bash install.sh
 ```
 
 **打包一次，内网一条命令装完。**
+
+全程不需要 git：源码用 U 盘或共享盘拷到打包机即可。
 
 ---
 
@@ -35,23 +39,63 @@ pm-linux-offline.tar.gz  ──拷贝──→  tar xzf
 
 ## 三、打包（在能联网的机器上）
 
-```bash
-# 克隆代码
-git clone https://github.com/tanwb0223/pm.git
-cd pm
+### 3.1 准备源码
 
-# 一键打包
-bash pack-linux.sh
+**不需要 git**。把源码目录整个拷到打包机上即可：
+
+- U 盘拷贝
+- 或从内网共享盘复制
+- 或解压源码压缩包
+
+只要保证目录结构完整：
+
+```
+pm/
+├── backend/
+├── frontend/
+├── pack.sh
+├── deploy-linux.sh
+└── deploy-windows.ps1
 ```
 
-脚本做四件事：
+### 3.2 执行打包
 
-1. **构建前端**（如果 `frontend/dist` 不存在，需要本机有 Node 18+）
-2. **下载 Python 依赖**（针对 Linux x86_64 + Python 3.12 下载 wheel 包）
-3. **复制源码**与配置模板
-4. **生成 `install.sh`** 一键安装脚本
+**Linux / macOS 打包机**：
 
-产出：**`pm-linux-offline.tar.gz`**（约 80-120 MB）
+```bash
+cd pm
+
+# 同时打包 Windows 和 Linux（推荐）
+bash pack.sh
+
+# 或只打 Linux
+bash pack.sh linux
+```
+
+**Windows 打包机**（用 PowerShell，见 `pack.ps1`）：
+
+```powershell
+cd pm
+.\pack.ps1            # 同时打包双平台
+.\pack.ps1 -Target linux
+```
+
+### 3.3 打包机需要什么
+
+| 依赖 | 用途 | 必需 |
+|---|---|---|
+| Python 3.12 | 下载与目标平台匹配的 wheel 包 | ✅ 必须 |
+| Node.js 18+ | 构建前端（如果 `frontend/dist` 已存在则跳过） | 视情况 |
+| 网络 | 从 pypi.org 下载依赖 | ✅ 必须 |
+
+**不需要 git**，源码可以是任何方式拷过来的。
+
+### 3.4 产出
+
+```
+pm-offline-linux.tar.gz      约 100 MB
+pm-offline-windows.zip       约 100 MB
+```
 
 内部结构：
 
@@ -60,33 +104,33 @@ package/
 ├── app/                    后端源码
 │   ├── app/                FastAPI 应用
 │   ├── alembic/            数据库迁移
-│   ├── scripts/            管理脚本
+│   ├── scripts/            管理脚本（含 backup.py）
 │   ├── requirements.txt    依赖清单
 │   └── .env.example
-├── frontend/dist/          前端构建产物（2.1 MB）
-├── wheels/                 Python 离线依赖包
+├── frontend/dist/          前端产物（2.1 MB）
+├── wheels/                 Python 离线依赖包（约 40 MB）
 └── install.sh              一键安装脚本
 ```
 
-### 如果打包机器不是 Linux
+### 3.5 打包机与目标机的关系
 
-`pip download` 需要指定目标平台。脚本已内置跨平台参数：
+| 项 | 要求 |
+|---|---|
+| Python 版本 | 打包机与目标机**都必须是 3.12** |
+| 操作系统 | 可不同（脚本会按目标平台下载对应 wheel） |
+| 架构 | 都需 x86_64（ARM 需改脚本中的 platform 参数） |
 
-```bash
---platform manylinux_2_28_x86_64 \
---python-version 312 \
---abi cp312
-```
-
-如果目标服务器是 ARM（如鲲鹏、飞腾），需改用：
+`pack.sh` 会为两个平台分别下载：
 
 ```bash
---platform manylinux_2_28_aarch64
+# Linux
+--platform manylinux_2_28_x86_64
+
+# Windows
+--platform win_amd64
 ```
 
-修改脚本第 3 步的平台参数即可。
-
----
+这样打出的包在对应平台上可直接安装，不依赖打包机的操作系统。
 
 ## 四、内网部署
 

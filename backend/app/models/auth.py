@@ -16,10 +16,10 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.session import Base
+from app.db.types import BIGINT_PK, JSON_TYPE, aware_timestamp
 
 
 class AuthProvider(Base):
@@ -27,7 +27,7 @@ class AuthProvider(Base):
 
     __tablename__ = "auth_provider"
 
-    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True)
     kind: Mapped[str] = mapped_column(String(32), nullable=False, unique=True)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     display_name: Mapped[str] = mapped_column(String(64), nullable=False, default="")
@@ -39,17 +39,15 @@ class AuthProvider(Base):
     # CAS / SAML 用
     server_url: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     # 其他协议特有配置（端点、字段映射、corp_id 等）
-    extra: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    extra: Mapped[dict] = mapped_column(JSON_TYPE, nullable=False, default=dict)
     # 是否自动创建用户（首次登录）
     auto_create_user: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     # 默认角色（自动创建用户时分配）
-    default_role_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    default_role_id: Mapped[int | None] = mapped_column(BIGINT_PK, nullable=True)
     sort: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+    created_at: Mapped[datetime] = aware_timestamp(server_default=func.now(), nullable=False
     )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    updated_at: Mapped[datetime] = aware_timestamp(server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
 
@@ -66,13 +64,12 @@ class AuthLoginState(Base):
     code_verifier: Mapped[str] = mapped_column(String(128), nullable=False, default="")
     redirect_after: Mapped[str] = mapped_column(String(500), nullable=False, default="/")
     login_code: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
-    user_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    user_id: Mapped[int | None] = mapped_column(BIGINT_PK, nullable=True)
     # 绑定场景：已登录用户绑定第三方账号
-    bind_user_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+    bind_user_id: Mapped[int | None] = mapped_column(BIGINT_PK, nullable=True)
+    expires_at: Mapped[datetime] = aware_timestamp(nullable=False)
+    consumed_at: Mapped[datetime | None] = aware_timestamp(nullable=True)
+    created_at: Mapped[datetime] = aware_timestamp(server_default=func.now(), nullable=False
     )
 
 
@@ -84,15 +81,14 @@ class AuthIdentity(Base):
         UniqueConstraint("provider_id", "subject", name="uq_identity_provider_subject"),
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
-    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("sys_user.id"), nullable=False)
+    id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(BIGINT_PK, ForeignKey("sys_user.id"), nullable=False)
     provider_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("auth_provider.id"), nullable=False
     )
     subject: Mapped[str] = mapped_column(String(255), nullable=False)
     # 最后一次登录时第三方返回的声明
-    claims: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
-    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+    claims: Mapped[dict] = mapped_column(JSON_TYPE, nullable=False, default=dict)
+    last_login_at: Mapped[datetime | None] = aware_timestamp(nullable=True)
+    created_at: Mapped[datetime] = aware_timestamp(server_default=func.now(), nullable=False
     )

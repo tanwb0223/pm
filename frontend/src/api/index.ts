@@ -360,3 +360,56 @@ export const exportApi = {
       report: { key: string; label: string }[]
     }>('/export/fields'),
 }
+
+// ================================================================ 附件
+export interface AttachmentItem {
+  id: number
+  biz_type: string
+  biz_id: number
+  file_name: string
+  file_size: number
+  size_text: string
+  file_ext: string
+  mime_type: string
+  download_count: number
+  uploader_id: number
+  uploader_name: string | null
+  uploaded_at: string
+}
+
+export const attachmentApi = {
+  /** 上传附件 */
+  upload: async (file: File, bizType: string, bizId: number) => {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('biz_type', bizType)
+    form.append('biz_id', String(bizId))
+    const resp = await http.post('/attachments/upload', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return resp as unknown as AttachmentItem
+  },
+
+  /** 附件列表 */
+  list: (bizType: string, bizId: number) =>
+    get<AttachmentItem[]>('/attachments', { biz_type: bizType, biz_id: bizId }),
+
+  /** 下载地址 */
+  downloadUrl: (id: number) => `/api/attachments/${id}/download`,
+
+  /** 预览地址 */
+  previewUrl: (id: number) => `/api/attachments/${id}/preview`,
+
+  /** 删除 */
+  remove: (id: number) => del<void>(`/attachments/${id}`),
+
+  /** 存储统计 */
+  stats: () =>
+    get<{
+      count: number
+      size_mb: number
+      storage_dir: string
+      disk_free_mb: number
+      disk_total_mb: number
+    }>('/attachments/stats'),
+}

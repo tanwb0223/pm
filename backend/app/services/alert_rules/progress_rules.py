@@ -46,14 +46,14 @@ class AL01ProgressLag(AlertRule):
                 SELECT sub_id, COUNT(*) AS cnt
                 FROM prog_snapshot
                 WHERE snap_date <= :day
-                  AND snap_date > :day - INTERVAL '30 day'
+                  AND snap_date > :since
                   AND deviation < :threshold
                   AND is_free_day = false
                 GROUP BY sub_id
                 HAVING COUNT(*) >= :days
                 """
             ),
-            {"day": ctx.day, "threshold": threshold, "days": days},
+            {"day": ctx.day, "since": ctx.day - timedelta(days=30), "threshold": threshold, "days": days},
         ).all()
 
         out = []
@@ -92,14 +92,14 @@ class AL02SevereLag(AlertRule):
                 SELECT sub_id, MIN(deviation) AS dev, COUNT(*) AS cnt
                 FROM prog_snapshot
                 WHERE snap_date <= :day
-                  AND snap_date > :day - INTERVAL '7 day'
+                  AND snap_date > :since
                   AND deviation <= :threshold
                   AND is_free_day = false
                 GROUP BY sub_id
                 HAVING COUNT(*) >= 1
                 """
             ),
-            {"day": ctx.day, "threshold": threshold},
+            {"day": ctx.day, "since": ctx.day - timedelta(days=7), "threshold": threshold},
         ).all()
 
         out = []
@@ -139,7 +139,7 @@ class AL03Stagnant(AlertRule):
                 WHERE snap_date = :day AND days_since_update > :days AND is_free_day = false
                 """
             ),
-            {"day": ctx.day, "days": days},
+            {"day": ctx.day, "since": ctx.day - timedelta(days=120), "days": days},
         ).all()
 
         out = []
@@ -333,14 +333,14 @@ class AL11ZeroProgress(AlertRule):
                 SELECT sub_id, COUNT(*) AS cnt
                 FROM prog_snapshot
                 WHERE snap_date <= :day
-                  AND snap_date > :day - INTERVAL '120 day'
+                  AND snap_date > :since
                   AND actual_progress = 0
                   AND is_free_day = false
                 GROUP BY sub_id
                 HAVING COUNT(*) >= :days
                 """
             ),
-            {"day": ctx.day, "days": days},
+            {"day": ctx.day, "since": ctx.day - timedelta(days=120), "days": days},
         ).all()
 
         out = []

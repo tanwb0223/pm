@@ -11,6 +11,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.deps import CurrentUser, get_current_user, require_perm
+from app.db.dialect import ilike
 from app.core.exceptions import BusinessError, NotFoundError
 from app.core.response import ok, page
 from app.core.security import hash_password
@@ -65,7 +66,7 @@ def pick_users(
     stmt = select(SysUser).where(SysUser.status == "ACTIVE")
     if keyword:
         like = f"%{keyword}%"
-        stmt = stmt.where(or_(SysUser.name.ilike(like), SysUser.staff_no.ilike(like)))
+        stmt = stmt.where(or_(ilike(SysUser.name, keyword), ilike(SysUser.staff_no, keyword)))
     if college_id:
         stmt = stmt.where(SysUser.college_id == college_id)
     rows = list(db.scalars(stmt.order_by(SysUser.id).limit(limit)))
@@ -95,7 +96,7 @@ def list_users(
     stmt = select(SysUser)
     if keyword:
         like = f"%{keyword}%"
-        stmt = stmt.where(or_(SysUser.name.ilike(like), SysUser.staff_no.ilike(like)))
+        stmt = stmt.where(or_(ilike(SysUser.name, keyword), ilike(SysUser.staff_no, keyword)))
     if college_id:
         stmt = stmt.where(SysUser.college_id == college_id)
     if status:

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import BusinessError, ForbiddenError, NotFoundError
 from app.core.scope import apply_scope
+from app.db.dialect import ilike
 from app.models.project import ProjMajor, ProjMajorCollege, ProjSub
 from app.models.system import SysCollege, SysUser
 from app.schemas.project import (
@@ -91,7 +92,7 @@ class ProjectService:
         stmt = apply_scope(stmt, user, ProjMajor)
 
         if keyword:
-            stmt = stmt.where(ProjMajor.name.ilike(f"%{keyword}%"))
+            stmt = stmt.where(ilike(ProjMajor.name, keyword))
         if type_:
             stmt = stmt.where(ProjMajor.type == type_)
         if status:
@@ -267,7 +268,7 @@ class ProjectService:
         if owner_id:
             stmt = stmt.where(ProjSub.owner_id == owner_id)
         if keyword:
-            stmt = stmt.where(ProjSub.name.ilike(f"%{keyword}%"))
+            stmt = stmt.where(ilike(ProjSub.name, keyword))
 
         total = self.db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
         rows = list(
