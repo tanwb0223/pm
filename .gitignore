@@ -104,3 +104,5 @@ backend/fonts/*.otf
 
 # 临时提交信息文件
 .git-commit-msg.txt
+.acl-recovery/
+.work/
