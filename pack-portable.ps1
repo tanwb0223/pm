@@ -128,11 +128,30 @@ try {
     Copy-Item (Join-Path $Root "backend\scripts") "$Pkg\app\scripts" -Recurse
     Copy-Item (Join-Path $Root "backend\requirements-prod.txt") "$Pkg\app\requirements.txt"
 
-    # 前端
+    # 前端（未构建则自动构建）
     $dist = Join-Path $Root "frontend\dist"
     if (-not (Test-Path "$dist\index.html")) {
-        Err "前端未构建，请先执行：cd frontend; pnpm install; pnpm build"
-        exit 1
+        Warn "前端未构建，正在自动构建..."
+        $pnpm = Get-Command pnpm -ErrorAction SilentlyContinue
+        if (-not $pnpm) {
+            Err "未安装 pnpm，无法构建前端"
+            Write-Host "  请先安装 Node.js 18+：https://nodejs.org/"
+            Write-Host "  再安装 pnpm：npm install -g pnpm"
+            exit 1
+        }
+        Push-Location (Join-Path $Root "frontend")
+        if (-not (Test-Path "node_modules")) {
+            Info "安装前端依赖..."
+            & pnpm install
+            if ($LASTEXITCODE -ne 0) { Err "依赖安装失败"; Pop-Location; exit 1 }
+        }
+        Info "构建前端..."
+        & pnpm build
+        if ($LASTEXITCODE -ne 0) { Err "前端构建失败"; Pop-Location; exit 1 }
+        Pop-Location
+        Info "前端构建完成"
+    } else {
+        Info "前端已构建，直接使用"
     }
     Copy-Item $dist "$Pkg\frontend\dist" -Recurse
 
