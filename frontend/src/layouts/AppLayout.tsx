@@ -22,7 +22,7 @@ import {
 import { Avatar, Badge, Button, Dropdown, Layout, Menu, Space, Tag, Typography } from 'antd'
 
 import { alertApi, authApi, collegeApi, majorApi } from '@/api'
-import { useAuthStore } from '@/stores/auth'
+import { useAuthStore, useCan } from '@/stores/auth'
 import { useDictStore } from '@/stores/dict'
 
 const { Header, Sider, Content } = Layout
@@ -32,7 +32,7 @@ export default function AppLayout() {
   const navigate = useNavigate()
   const location = useLocation()
   const [collapsed, setCollapsed] = useState(false)
-  const { user, setUser, logout, hasPerm } = useAuthStore()
+  const { user, setUser, logout } = useAuthStore()
   const setColleges = useDictStore((s) => s.setColleges)
   const setMajors = useDictStore((s) => s.setMajors)
 
@@ -67,30 +67,33 @@ export default function AppLayout() {
     refetchInterval: 60 * 1000,
   })
 
+  // 权限判定：useCan() 内部订阅 user，刷新后 me 回来会触发重渲染
+  const can = useCan()
+
   // 系统管理二级菜单（按权限过滤：只挂了 system:org 的账号不应看到用户管理、参数配置）
   const systemChildren = useMemo(() => {
     const list: { key: string; label: string; icon?: JSX.Element }[] = []
-    if (hasPerm('system:org')) {
+    if (can('system:org')) {
       list.push({ key: '/system/org', label: '组织管理', icon: <ApartmentOutlined /> })
     }
-    if (hasPerm('system:user')) {
+    if (can('system:user')) {
       list.push({ key: '/system/users', label: '用户管理', icon: <TeamOutlined /> })
     }
-    if (hasPerm('system:role')) {
+    if (can('system:role')) {
       list.push({ key: '/system/roles', label: '角色权限', icon: <SafetyOutlined /> })
       list.push({ key: '/system/auth-providers', label: '认证方式', icon: <AuditOutlined /> })
     }
-    if (hasPerm('system:config')) {
+    if (can('system:config')) {
       list.push({ key: '/system/configs', label: '参数配置', icon: <DatabaseOutlined /> })
     }
-    if (hasPerm('system:holiday')) {
+    if (can('system:holiday')) {
       list.push({ key: '/system/holidays', label: '免填日历', icon: <CalendarOutlined /> })
     }
-    if (hasPerm('system:audit')) {
+    if (can('system:audit')) {
       list.push({ key: '/system/audit', label: '操作日志', icon: <AuditOutlined /> })
     }
     return list
-  }, [hasPerm])
+  }, [can])
 
   const menuItems = useMemo(() => {
     const items: { key: string; icon: JSX.Element; label: React.ReactNode }[] = [
@@ -108,14 +111,14 @@ export default function AppLayout() {
       },
     ]
 
-    if (hasPerm('project:major:view') || hasPerm('project:sub:view')) {
+    if (can('project:major:view') || can('project:sub:view')) {
       items.push({
         key: 'project',
         icon: <ProjectOutlined />,
         label: '项目管理',
       } as never)
     }
-    if (hasPerm('progress:table')) {
+    if (can('progress:table')) {
       items.push({ key: '/progress/table', icon: <BarChartOutlined />, label: '进度总表' })
       items.push({
         key: '/progress/college-compare',
@@ -123,7 +126,7 @@ export default function AppLayout() {
         label: '学院对比',
       })
     }
-    if (hasPerm('alert:list')) {
+    if (can('alert:list')) {
       items.push({
         key: '/alert/center',
         icon: <AlertOutlined />,
@@ -137,10 +140,10 @@ export default function AppLayout() {
         ),
       })
     }
-    if (hasPerm('report:fill')) {
+    if (can('report:fill')) {
       items.push({ key: '/report/list', icon: <FileTextOutlined />, label: '报表管理' })
     }
-    if (hasPerm('risk:list')) {
+    if (can('risk:list')) {
       items.push({ key: '/risk/list', icon: <WarningOutlined />, label: '风险登记' })
     }
     // 只要有任何系统管理子菜单，就显示一级菜单
@@ -148,7 +151,7 @@ export default function AppLayout() {
       items.push({ key: 'system', icon: <SettingOutlined />, label: '系统管理' } as never)
     }
     return items
-  }, [hasPerm, todo, systemChildren])
+  }, [can, todo, systemChildren])
 
   const childrenMap: Record<string, { key: string; label: string; icon?: JSX.Element }[]> = {
     project: [

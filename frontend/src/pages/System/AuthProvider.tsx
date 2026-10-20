@@ -6,6 +6,7 @@ import {
   Col,
   Drawer,
   Input,
+  Result,
   Row,
   Select,
   Space,
@@ -27,7 +28,7 @@ import {
 
 import PageHeader from '@/components/PageHeader'
 import { authAdminApi, systemApi } from '@/api'
-import { useAuthStore } from '@/stores/auth'
+import { useAuthStore, useCan } from '@/stores/auth'
 
 interface ProviderRow {
   kind: string
@@ -57,12 +58,23 @@ const KIND_META: Record<string, { icon: React.ReactNode; desc: string }> = {
   wecom: { icon: <BankOutlined />, desc: '企业微信登录' },
 }
 
-/** 认证方式管理（9 种协议） */
+/** 认证方式管理（9 种协议；守卫在外层，避免 Hook 数量变化） */
 export default function AuthProviderPage() {
+  const can = useCan()
+  if (!can('system:role')) {
+    return (
+      <div className="page-container">
+        <Result status="403" title="无权限" subTitle="需要 system:role 权限才能配置认证方式" />
+      </div>
+    )
+  }
+  return <AuthProviderPageInner />
+}
+
+function AuthProviderPageInner() {
   const { message } = App.useApp()
   const qc = useQueryClient()
-  const hasPerm = useAuthStore((s) => s.hasPerm)
-  const canWrite = hasPerm('system:role')
+  const canWrite = true
 
   const [editingKind, setEditingKind] = useState<string | null>(null)
 

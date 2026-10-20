@@ -23,7 +23,7 @@ import PageHeader from '@/components/PageHeader'
 import { MajorStatusTag } from '@/components/Tags'
 import { exportApi, majorApi, systemApi } from '@/api'
 import { MAJOR_STATUS_LABEL, MAJOR_TYPES, fmtDate } from '@/lib/constants'
-import { useAuthStore } from '@/stores/auth'
+import { useAuthStore, useCan } from '@/stores/auth'
 import type { Major } from '@/types'
 
 interface MajorFormValues {
@@ -75,8 +75,8 @@ function OwnerSelect({
 
 export default function MajorListPage() {
   const queryClient = useQueryClient()
-  const hasPerm = useAuthStore((s) => s.hasPerm)
-  const canEdit = hasPerm('project:major:edit')
+  const can = useCan()
+  const canEdit = can('project:major:edit')
 
   // ---------------------------------------------------------------- 筛选
   const [keyword, setKeyword] = useState('')

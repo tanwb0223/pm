@@ -6,6 +6,7 @@ import {
   Input,
   Modal,
   Popconfirm,
+  Result,
   Select,
   Space,
   Table,
@@ -19,14 +20,26 @@ import PageHeader from '@/components/PageHeader'
 import ImportModal from '@/components/ImportModal'
 import { systemApi, collegeApi } from '@/api'
 import { fmtDateTime } from '@/lib/constants'
-import { useAuthStore } from '@/stores/auth'
+import { useAuthStore, useCan } from '@/stores/auth'
 import type { UserItem } from '@/types'
 
-/** 用户管理 */
+/** 用户管理（权限守卫在外层，内层只在有权限时挂载，避免 Hook 数量变化） */
 export default function UserPage() {
+  const can = useCan()
+  if (!can('system:user')) {
+    return (
+      <div className="page-container">
+        <Result status="403" title="无权限" subTitle="需要 system:user 权限才能查看用户列表" />
+      </div>
+    )
+  }
+  return <UserPageInner />
+}
+
+function UserPageInner() {
   const { message } = App.useApp()
   const qc = useQueryClient()
-  const hasPerm = useAuthStore((s) => s.hasPerm)
+  const can = useCan()
 
   const [keyword, setKeyword] = useState('')
   const [importOpen, setImportOpen] = useState(false)
@@ -39,7 +52,14 @@ export default function UserPage() {
   const [creating, setCreating] = useState(false)
   const [form] = Form.useForm()
 
-  const { data: colleges } = useQuery({ queryKey: ['colleges'], queryFn: collegeApi.list })
+  const canView = true
+  const canWrite = can('system:user')
+
+  const { data: colleges } = useQuery({
+    queryKey: ['colleges'],
+    queryFn: collegeApi.list,
+    enabled: canView,
+  })
 
   const { data, isLoading } = useQuery({
     queryKey: ['users', { keyword, collegeId, status, page, pageSize }],
@@ -51,7 +71,10 @@ export default function UserPage() {
         page,
         page_size: pageSize,
       }),
+    // 无权限时不发请求：否则会弹一次 403 错误提示
+    enabled: canView,
   })
+
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['users'] })
 
@@ -113,7 +136,7 @@ export default function UserPage() {
             <Button type="link" size="small" onClick={() => openEdit(record)}>
               编辑
             </Button>
-            {hasPerm('system:user') && record.status === 'ACTIVE' && (
+            {can('system:user') && record.status === 'ACTIVE' && (
               <Popconfirm
                 title="确认停用该用户？"
                 description="停用后该用户无法登录"
@@ -170,7 +193,7 @@ export default function UserPage() {
         title="用户管理"
         subtitle="系统用户账号；第三方登录（SSO/钉钉等）首次登录时按自动建号规则创建"
         extra={
-          hasPerm('system:user') && (
+          can('system:user') && (
             <Space>
               <Button icon={<UploadOutlined />} onClick={() => setImportOpen(true)}>
                 批量导入

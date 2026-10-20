@@ -24,7 +24,7 @@ import { RiskLevelTag } from '@/components/Tags'
 import { majorApi, riskApi, subApi, systemApi } from '@/api'
 import { fmtDate } from '@/lib/constants'
 import { useDictStore } from '@/stores/dict'
-import { useAuthStore } from '@/stores/auth'
+import { useAuthStore, useCan } from '@/stores/auth'
 import type { RiskItem, Sub } from '@/types'
 
 const LEVEL_OPTIONS = [
@@ -45,7 +45,7 @@ interface RiskFormValues {
 export default function RiskListPage() {
   const { message } = App.useApp()
   const queryClient = useQueryClient()
-  const hasPerm = useAuthStore((s) => s.hasPerm)
+  const can = useCan()
   const majors = useDictStore((s) => s.majors)
 
   const [params, setParams] = useState<{
@@ -211,7 +211,7 @@ export default function RiskListPage() {
         key: 'act',
         width: 160,
         render: (_: unknown, r: RiskItem) =>
-          hasPerm('risk:edit') ? (
+          can('risk:edit') ? (
             <Space size={4}>
               <Button type="link" size="small" onClick={() => openEdit(r)}>
                 编辑
@@ -239,7 +239,7 @@ export default function RiskListPage() {
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [majors, hasPerm],
+    [majors, can],
   )
 
   const subOptions = (subPage?.items ?? []).map((s: Sub) => ({ value: s.id, label: s.name }))
@@ -250,7 +250,7 @@ export default function RiskListPage() {
         title="风险登记"
         subtitle="登记项目风险并跟踪闭环；风险超期会触发 AL-08 预警"
         extra={
-          hasPerm('risk:edit') && (
+          can('risk:edit') && (
             <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
               登记风险
             </Button>

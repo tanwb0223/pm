@@ -10,6 +10,7 @@ import {
   Modal,
   Popconfirm,
   Radio,
+  Result,
   Select,
   Space,
   Table,
@@ -22,7 +23,7 @@ import type { ColumnsType } from 'antd/es/table'
 
 import PageHeader from '@/components/PageHeader'
 import { systemApi } from '@/api'
-import { useAuthStore } from '@/stores/auth'
+import { useAuthStore, useCan } from '@/stores/auth'
 
 interface HolidayRow {
   id: number
@@ -37,8 +38,8 @@ const TYPE_LABEL: Record<string, string> = { HOLIDAY: '假期', VACATION: '寒�
 export default function HolidayPage() {
   const { message } = App.useApp()
   const qc = useQueryClient()
-  const hasPerm = useAuthStore((s) => s.hasPerm)
-  const canWrite = hasPerm('system:holiday')
+  const can = useCan()
+  const canWrite = can('system:holiday')
 
   const thisYear = dayjs().year()
   const [year, setYear] = useState<number>(thisYear)
@@ -46,7 +47,14 @@ export default function HolidayPage() {
   const [open, setOpen] = useState(false)
   const [form] = Form.useForm()
 
-  const { data, isLoading } = useQuery({ queryKey: ['holidays', year], queryFn: () => systemApi.holidays(year) })
+  const canView = can('system:holiday')
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['holidays', year],
+    queryFn: () => systemApi.holidays(year),
+    // 无权限时不发请求：否则会弹一次 403 错误提示
+    enabled: canView,
+  })
 
   const addMut = useMutation({
     mutationFn: (values: { range: [Dayjs, Dayjs]; type: string; name?: string }) => {
@@ -119,6 +127,14 @@ export default function HolidayPage() {
     value: y,
     label: `${y} 年`,
   }))
+
+  if (!canView) {
+    return (
+      <div className="page-container">
+        <Result status="403" title="无权限" subTitle="需要 system:holiday 权限才能查看免填日历" />
+      </div>
+    )
+  }
 
   return (
     <div className="page-container">

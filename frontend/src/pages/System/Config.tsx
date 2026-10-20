@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Alert, App, Button, Input, InputNumber, Modal, Space, Table, Tag } from 'antd'
+import { Alert, App, Button, Input, InputNumber, Modal, Result, Space, Table, Tag } from 'antd'
 import { SearchOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 
 import PageHeader from '@/components/PageHeader'
 import { systemApi } from '@/api'
-import { useAuthStore } from '@/stores/auth'
+import { useAuthStore, useCan } from '@/stores/auth'
 
 interface ConfigRow {
   key: string
@@ -15,12 +15,23 @@ interface ConfigRow {
   remark: string | null
 }
 
-/** 系统参数配置 */
+/** 系统参数配置（守卫在外层，避免 Hook 数量变化） */
 export default function ConfigPage() {
+  const can = useCan()
+  if (!can('system:config')) {
+    return (
+      <div className="page-container">
+        <Result status="403" title="无权限" subTitle="需要 system:config 权限才能查看系统参数" />
+      </div>
+    )
+  }
+  return <ConfigPageInner />
+}
+
+function ConfigPageInner() {
   const { message } = App.useApp()
   const qc = useQueryClient()
-  const hasPerm = useAuthStore((s) => s.hasPerm)
-  const canWrite = hasPerm('system:config')
+  const canWrite = true
 
   const [search, setSearch] = useState('')
   const [editing, setEditing] = useState<ConfigRow | null>(null)

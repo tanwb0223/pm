@@ -10,6 +10,7 @@ import {
   Modal,
   Popconfirm,
   Radio,
+  Result,
   Select,
   Space,
   Table,
@@ -22,7 +23,7 @@ import type { ColumnsType } from 'antd/es/table'
 
 import PageHeader from '@/components/PageHeader'
 import { collegeApi, majorApi, systemApi } from '@/api'
-import { useAuthStore } from '@/stores/auth'
+import { useAuthStore, useCan } from '@/stores/auth'
 
 /** 授权记录（局部类型，与 systemApi.grants 返回一致） */
 interface GrantRow {
@@ -62,12 +63,21 @@ const PERM_TYPE_LABEL: Record<string, string> = {
   MODULE: '模块',
 }
 
-/** 角色权限管理：角色 + 用户授权 + 权限配置三个 Tab */
+/** 角色权限管理：角色 + 用户授权 + 权限配置三个 Tab（守卫在外层，避免 Hook 数量变化） */
 export default function RolePage() {
-  const { message } = App.useApp()
-  const qc = useQueryClient()
-  const hasPerm = useAuthStore((s) => s.hasPerm)
-  const canWrite = hasPerm('system:role')
+  const can = useCan()
+  if (!can('system:role')) {
+    return (
+      <div className="page-container">
+        <Result status="403" title="无权限" subTitle="需要 system:role 权限才能查看角色与授权" />
+      </div>
+    )
+  }
+  return <RolePageInner />
+}
+
+function RolePageInner() {
+  const canWrite = true
 
   return (
     <div className="page-container">

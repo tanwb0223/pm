@@ -25,7 +25,7 @@ import { ReportStatusTag } from '@/components/Tags'
 import { exportApi, reportApi } from '@/api'
 import { REPORT_TYPE_LABEL, fmtDate, fmtDateTime } from '@/lib/constants'
 import { useDictStore } from '@/stores/dict'
-import { useAuthStore } from '@/stores/auth'
+import { useAuthStore, useCan } from '@/stores/auth'
 import type { ReportItem } from '@/types'
 
 interface ListParams {
@@ -41,7 +41,7 @@ interface ListParams {
 export default function ReportListPage() {
   const { message } = App.useApp()
   const queryClient = useQueryClient()
-  const hasPerm = useAuthStore((s) => s.hasPerm)
+  const can = useCan()
   const majors = useDictStore((s) => s.majors)
 
   const [params, setParams] = useState<ListParams>({ page: 1, page_size: 20 })
@@ -160,7 +160,7 @@ export default function ReportListPage() {
           >
             查看
           </Button>
-          {hasPerm('report:void') && r.status === 'SUBMITTED' && (
+          {can('report:void') && r.status === 'SUBMITTED' && (
             <Button type="link" size="small" danger onClick={() => setVoidTarget(r)}>
               作废
             </Button>

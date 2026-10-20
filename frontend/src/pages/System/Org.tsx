@@ -9,6 +9,7 @@ import {
   InputNumber,
   Modal,
   Popconfirm,
+  Result,
   Select,
   Space,
   Table,
@@ -21,7 +22,7 @@ import type { ColumnsType } from 'antd/es/table'
 import PageHeader from '@/components/PageHeader'
 import ImportModal from '@/components/ImportModal'
 import { collegeApi } from '@/api'
-import { useAuthStore } from '@/stores/auth'
+import { useAuthStore, useCan } from '@/stores/auth'
 import type { College } from '@/types'
 
 interface OrgFormValues {
@@ -40,8 +41,8 @@ interface OrgFormValues {
 export default function OrgPage() {
   const { message } = App.useApp()
   const qc = useQueryClient()
-  const hasPerm = useAuthStore((s) => s.hasPerm)
-  const canWrite = hasPerm('system:org')
+  const can = useCan()
+  const canWrite = can('system:org')
 
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<College | null>(null)
@@ -212,6 +213,13 @@ export default function OrgPage() {
           )
         }
       />
+      {!canWrite && (
+        <Result
+          status="403"
+          title="只读或无权限"
+          subTitle="维护学院需要 system:org 权限；当前账号可以查看列表，但无法新增、编辑或删除"
+        />
+      )}
 
       {colleges.length === 0 && !isLoading && (
         <Alert

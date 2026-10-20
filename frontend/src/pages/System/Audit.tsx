@@ -7,7 +7,7 @@ import type { ColumnsType } from 'antd/es/table'
 import PageHeader from '@/components/PageHeader'
 import { systemApi } from '@/api'
 import { fmtDateTime } from '@/lib/constants'
-import { useAuthStore } from '@/stores/auth'
+import { useAuthStore, useCan } from '@/stores/auth'
 
 interface AuditRow {
   id: number
@@ -29,7 +29,7 @@ const ACTION_COLOR: Record<string, string> = {
 
 /** 操作日志（只读） */
 export default function AuditPage() {
-  const hasPerm = useAuthStore((s) => s.hasPerm)
+  const can = useCan()
 
   const [action, setAction] = useState('')
   const [targetType, setTargetType] = useState('')
@@ -37,7 +37,7 @@ export default function AuditPage() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
 
-  const allowed = hasPerm('system:audit')
+  const allowed = can('system:audit')
 
   const { data, isLoading } = useQuery({
     queryKey: ['audit', { action, targetType, operatorId, page, pageSize }],

@@ -108,6 +108,141 @@ def init_db() -> None:
     ensure_alembic_stamped(_url)
 
 
+# ================================================================ 角色权限基线
+# 与 alembic/versions/0001_init.py 的 viewer_perms 保持一致：
+# 除系统管理员外，其余 6 个内置角色都至少拥有这些查看类权限。
+# 缺了它们，普通教师登录后侧边栏只剩「我的督办」，点任何业务页都是 403。
+_VIEWER_PERMS = [
+    "dashboard", "dashboard:view",
+    "project", "project:major", "project:major:view",
+    "project:sub", "project:sub:view",
+    "progress", "progress:table",
+    "alert", "alert:list",
+    "export", "export:ledger", "export:progress",
+]
+
+_VIEWER_ROLE_CODES = (
+    "PROJECT_OWNER",
+    "MAJOR_OWNER",
+    "COLLEGE_OWNER",
+    "SUB_OWNER",
+    "REPORTER",
+    "VIEWER",
+)
+
+
+def _ensure_role_permissions(db) -> None:
+    """补齐非管理员角色的基线权限（幂等）
+
+    背景：SQLite 默认部署走的是 init_seed_data()，早期版本只给 SYS_ADMIN
+    灌了权限，其余角色权限数为 0，导致普通用户登录后几乎看不到任何菜单。
+    这里对已有库做一次兜底补齐，缺多少补多少，已存在的不动。
+    """
+    from sqlalchemy import select
+
+    from app.models.system import SysPermission, SysRole, SysRolePermission
+
+    roles = {
+        r.code: r
+        for r in db.scalars(select(SysRole).where(SysRole.code.in_(_VIEWER_ROLE_CODES)))
+    }
+    if not roles:
+        return
+
+    wanted = list(db.scalars(select(SysPermission).where(SysPermission.code.in_(_VIEWER_PERMS))))
+
+    added = 0
+    for role in roles.values():
+        existing = set(
+            db.scalars(
+                select(SysRolePermission.permission_id).where(
+                    SysRolePermission.role_id == role.id
+                )
+            )
+        )
+        for perm in wanted:
+            if perm.id not in existing:
+                db.add(SysRolePermission(role_id=role.id, permission_id=perm.id))
+                added += 1
+
+    if added:
+        db.commit()
+        logger.info("已补齐非管理员角色基线权限：%d 条", added)
+
+
+# ================================================================ 系统参数基线
+# 与 alembic/versions/0001_init.py 的 configs 保持逐条一致（33 条）。
+# 早期 SQLite 种子只写了 11 条，缺的 22 条里包含全部预警开关
+# （alert.AL-0x.enabled）和处置/报表/通知时限，导致 SQLite 部署下
+# 预警开关改了也不生效、报表时限取不到值。
+_DEFAULT_CONFIGS: list[tuple[str, str, str, str]] = [
+    # 预警阈值
+    ("alert.AL-01.enabled", "true", "BOOLEAN", "进度滞后预警开关"),
+    ("alert.AL-01.deviation", "-10", "INT", "滞后阈值（百分点）"),
+    ("alert.AL-01.days", "3", "INT", "滞后持续天数"),
+    ("alert.AL-02.enabled", "true", "BOOLEAN", "严重滞后预警开关"),
+    ("alert.AL-02.deviation", "-25", "INT", "严重滞后阈值"),
+    ("alert.AL-03.enabled", "true", "BOOLEAN", "进度停滞预警开关"),
+    ("alert.AL-03.days", "21", "INT", "停滞判定天数"),
+    ("alert.AL-05.enabled", "true", "BOOLEAN", "项目临期预警开关"),
+    ("alert.AL-05.days", "30", "INT", "临期判定天数"),
+    ("alert.AL-05.progress", "80", "INT", "临期进度阈值"),
+    ("alert.AL-07.enabled", "true", "BOOLEAN", "连续未填预警开关"),
+    ("alert.AL-07.periods", "3", "INT", "连续未填周期数"),
+    ("alert.AL-08.enabled", "true", "BOOLEAN", "风险超期预警开关"),
+    ("alert.AL-08.days", "7", "INT", "风险闭环默认天数"),
+    ("alert.AL-11.enabled", "true", "BOOLEAN", "长期零进度预警开关"),
+    ("alert.AL-11.days", "60", "INT", "零进度判定天数"),
+    # 处置时限
+    ("alert.red.deadline_days", "3", "INT", "红色预警处置天数"),
+    ("alert.orange.deadline_days", "7", "INT", "橙色预警处置天数"),
+    # 报表时限
+    ("report.daily.enabled", "false", "BOOLEAN", "日报是否启用（按项目类型可覆盖）"),
+    ("report.weekly.deadline_weekday", "1", "INT", "周报截止星期（1=周一）"),
+    ("report.weekly.deadline_hour", "12", "INT", "周报截止小时"),
+    ("report.monthly.deadline_workday", "3", "INT", "月报截止第几个工作日"),
+    ("report.monthly.deadline_hour", "18", "INT", "月报截止小时"),
+    ("report.correct_days", "3", "INT", "填报人自行更正天数"),
+    # 汇总
+    ("aggregate.school.mode", "EQUAL", "STRING", "全校进度汇总方式：EQUAL 等权"),
+    ("aggregate.include_closed", "true", "BOOLEAN", "已结项子项目是否按100%计入"),
+    # 通知
+    ("notify.digest.hour", "8", "INT", "每日摘要小时"),
+    ("notify.digest.minute", "30", "INT", "每日摘要分钟"),
+    ("notify.sms.enabled", "false", "BOOLEAN", "短信开关（仅红色预警）"),
+    ("notify.email.enabled", "true", "BOOLEAN", "邮件开关"),
+    # 系统
+    ("system.audit_retention_years", "2", "INT", "审计日志保留年数"),
+    ("system.session_idle_minutes", "30", "INT", "会话空闲超时分钟"),
+    ("system.snapshot_retention_years", "3", "INT", "快照保留年数"),
+]
+
+
+def _ensure_configs(db) -> None:
+    """补齐缺失的系统参数（幂等）
+
+    背景：早期 SQLite 种子只灌了 11 条参数，缺 22 条（含全部预警开关），
+    导致 SQLite 部署下改预警开关不生效。这里对已有库按基线补齐，
+    已存在的参数一律不动（不覆盖用户改过的值）。
+    """
+    from sqlalchemy import select
+
+    from app.models.system import SysConfig
+
+    existing = set(db.scalars(select(SysConfig.key)))
+    added = 0
+    for key, value, value_type, remark in _DEFAULT_CONFIGS:
+        if key not in existing:
+            db.add(
+                SysConfig(key=key, value=value, value_type=value_type, remark=remark)
+            )
+            added += 1
+
+    if added:
+        db.commit()
+        logger.info("已补齐缺失的系统参数：%d 条", added)
+
+
 def init_seed_data() -> None:
     """SQLite 首次建库时灌入基础数据
 
@@ -121,8 +256,10 @@ def init_seed_data() -> None:
     from app.models.system import SysConfig, SysPermission, SysRole, SysRolePermission
 
     with SessionLocal() as db:
-        # 已有数据就跳过
+        # 已有数据就跳过（但角色权限可能因历史版本缺失，单独兜底补齐）
         if db.scalar(select(SysRole).limit(1)):
+            _ensure_role_permissions(db)
+            _ensure_configs(db)
             return
 
         logger.info("初始化基础数据...")
@@ -197,20 +334,19 @@ def init_seed_data() -> None:
         for pid in perm_map.values():
             db.add(SysRolePermission(role_id=admin_id, permission_id=pid))
 
-        # 默认参数
-        configs = [
-            ("alert.AL-01.deviation", "-10", "INT", "进度滞后阈值（%）"),
-            ("alert.AL-01.days", "3", "INT", "滞后持续有效日"),
-            ("alert.AL-02.deviation", "-25", "INT", "严重滞后阈值（%）"),
-            ("alert.AL-03.days", "21", "INT", "停滞判定有效日"),
-            ("alert.AL-05.days", "30", "INT", "临期天数"),
-            ("alert.AL-05.progress", "80", "INT", "临期进度阈值（%）"),
-            ("alert.AL-07.periods", "3", "INT", "连续未填周期数"),
-            ("alert.AL-11.days", "60", "INT", "零进度有效日"),
-            ("report.correct_days", "3", "INT", "报表自更正天数"),
-            ("report.daily.enabled", "false", "BOOL", "是否启用日报"),
-            ("aggregate.include_closed", "true", "BOOL", "汇总是否含已结项"),
-        ]
+        # 其余角色按基线授予查看类权限（与 0001_init.py 迁移保持一致）
+        for role_code in _VIEWER_ROLE_CODES:
+            rid = role_map.get(role_code)
+            if rid is None:
+                continue
+            for pc in _VIEWER_PERMS:
+                pid = perm_map.get(pc)
+                if pid is not None:
+                    db.add(SysRolePermission(role_id=rid, permission_id=pid))
+
+        # 默认参数（必须与 alembic/versions/0001_init.py 的 configs 完全一致，
+        # 否则 SQLite 部署会缺参数：预警开关、处置时限、报表时限、通知开关全都不生效）
+        configs = _DEFAULT_CONFIGS
         for k, v, vt, remark in configs:
             db.add(SysConfig(key=k, value=v, value_type=vt, remark=remark))
 
