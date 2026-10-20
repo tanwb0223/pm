@@ -112,3 +112,8 @@ pm-windows-portable.zip
 pm-linux-portable.tar.gz
 pm-offline-*.zip
 pm-offline-*.tar.gz
+
+# 前端包管理器无关文件（保留 pnpm-lock.yaml）
+frontend/package-lock.json
+frontend/yarn.lock
+frontend/.pnpm-store

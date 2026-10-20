@@ -65,7 +65,7 @@ bash pack.sh windows
 | 依赖 | 用途 | 必需 |
 |---|---|---|
 | Python 3.12 | 下载与目标平台匹配的 wheel | ✅ 必须 |
-| Node.js 18+ | 构建前端（`frontend/dist` 已存在则跳过） | 视情况 |
+| Node.js 18+ 与 pnpm | 构建前端（`frontend/dist` 已存在则跳过） | 视情况 |
 | 网络 | 从 pypi.org 下载依赖 | ✅ 必须 |
 
 **不需要 git**，也不需要目标平台的操作系统。

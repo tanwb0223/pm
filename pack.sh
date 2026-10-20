@@ -43,8 +43,8 @@ echo "=============================================="
 if [ -d frontend/dist ] && [ -f frontend/dist/index.html ]; then
     info "已有构建产物，跳过"
 else
-    command -v npm >/dev/null || { err "未安装 npm"; exit 1; }
-    cd frontend && npm ci --no-audit --no-fund && npm run build && cd ..
+    command -v pnpm >/dev/null 2>&1 || { err "未安装 pnpm，请执行：npm install -g pnpm"; exit 1; }
+    cd frontend && pnpm install --frozen-lockfile && pnpm build && cd ..
     info "前端构建完成"
 fi
 

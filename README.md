@@ -31,7 +31,7 @@ pm/
 | 后端 | Python 3.12 · FastAPI 0.146 · SQLAlchemy 2.1（同步） · Alembic · psycopg 3 |
 | 数据库 | **SQLite（默认，零依赖）** 或 PostgreSQL 18+（可选） |
 | 前端 | React 18 · TypeScript 5 · Ant Design 5 · TanStack Query 5 · zustand · ECharts |
-| 构建 | Vite 5 |
+| 构建 | Vite 5 ｜ 包管理器 **pnpm** |
 | 认证 | 9 种协议（密码 / OIDC / OAuth2 / CAS / SAML2 / LDAP / 飞书 / 钉钉 / 企业微信） |
 
 ## 快速开始
@@ -63,13 +63,29 @@ uvicorn app.main:app --reload --port 8000
 
 ### 3. 前端
 
+本项目用 **pnpm** 管理前端依赖（比 npm 快 2-3 倍，磁盘占用少 60%）。
+
 ```powershell
+# 首次：安装 pnpm
+npm install -g pnpm
+
+# 安装依赖
 cd frontend
-npm install
-npm run dev
+pnpm install
+
+# 启动开发服务器
+pnpm dev
 ```
 
 访问 http://127.0.0.1:5173
+
+生产构建：
+
+```powershell
+pnpm build
+```
+
+产物在 `frontend/dist/`，由后端托管（`PM_FRONTEND_SERVE=true`）。
 
 **默认账号**
 

@@ -1,13 +1,37 @@
 # 产教融合项目管理系统 · 前端
 
 React 18 + TypeScript + Ant Design 5 + TanStack Query
+构建工具：**Vite 5** ｜ 包管理器：**pnpm**
 
 ## 快速开始
 
+### 1. 安装 pnpm（首次）
+
+```powershell
+# 用 npm 全局安装 pnpm
+npm install -g pnpm
+
+# 或使用 corepack（Node 16.10+ 自带）
+corepack enable
+corepack prepare pnpm@latest --activate
+
+# 验证
+pnpm --version
+```
+
+### 2. 安装依赖
+
 ```powershell
 cd frontend
-npm install
-npm run dev
+pnpm install
+```
+
+> 首次安装约 10 秒（pnpm 用硬链接复用全局缓存，比 npm 快 2-3 倍）
+
+### 3. 启动开发服务器
+
+```powershell
+pnpm dev
 ```
 
 访问 http://127.0.0.1:5173
@@ -17,13 +41,35 @@ npm run dev
 ```powershell
 # 另开一个终端
 cd backend
-$env:PM_DATABASE_URL="postgresql+psycopg://postgres:123@localhost:5432/pm_dev"
-$env:PM_DEBUG="true"
 .\.venv\Scripts\uvicorn.exe app.main:app --port 8000
 ```
 
 默认账号：`admin` / `Admin@123`
 
+## 常用命令
+
+| 命令 | 说明 |
+|---|---|
+| `pnpm dev` | 启动开发服务器（热更新） |
+| `pnpm build` | 生产构建（类型检查 + 打包） |
+| `pnpm preview` | 预览构建产物 |
+| `pnpm lint` | ESLint 检查 |
+| `pnpm clean` | 清理 node_modules 和 dist |
+| `pnpm rebuild` | 清理后重新安装并构建 |
+
+## 为什么用 pnpm
+
+| 对比项 | npm | pnpm |
+|---|---|---|
+| 安装速度 | 基准 | **快 2-3 倍** |
+| 磁盘占用 | 每个项目独立 node_modules | **硬链接共享，省 60%+** |
+| 依赖冲突 | 扁平化，可能幽灵依赖 | **严格隔离，只能访问声明过的** |
+| lock 文件 | package-lock.json | pnpm-lock.yaml |
+
+本项目用 pnpm 的实际收益：
+- 170 个包，10 秒装完
+- 多个项目共用同一份依赖缓存
+- 避免 antd 等库的隐式依赖问题
 ## 技术选型
 
 | 项 | 选择 | 理由 |
@@ -137,7 +183,7 @@ const data = await get<PageData<Major>>('/majors', { page: 1 })
 ## 构建
 
 ```powershell
-npm run build
+pnpm build
 ```
 
 产物在 `dist/`，已做代码分割：

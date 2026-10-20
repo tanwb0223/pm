@@ -70,15 +70,16 @@ try {
     if (Test-Path $distIndex) {
         Info "已有构建产物，跳过"
     } else {
-        $npm = Get-Command npm -ErrorAction SilentlyContinue
-        if (-not $npm) {
-            Err "未安装 Node.js / npm，且 frontend\dist 不存在"
-            Write-Host "  请安装 Node.js 18+：https://nodejs.org/"
+        $pnpm = Get-Command pnpm -ErrorAction SilentlyContinue
+        if (-not $pnpm) {
+            Err "未安装 pnpm，且 frontend\dist 不存在"
+            Write-Host "  请先安装 Node.js 18+：https://nodejs.org/"
+            Write-Host "  再安装 pnpm：npm install -g pnpm"
             exit 1
         }
         Push-Location (Join-Path $Root "frontend")
-        & npm ci --no-audit --no-fund
-        & npm run build
+        & pnpm install --frozen-lockfile
+        & pnpm build
         Pop-Location
         Info "前端构建完成"
     }

@@ -131,7 +131,7 @@ try {
     # 前端
     $dist = Join-Path $Root "frontend\dist"
     if (-not (Test-Path "$dist\index.html")) {
-        Err "前端未构建，请先执行：cd frontend; npm ci; npm run build"
+        Err "前端未构建，请先执行：cd frontend; pnpm install; pnpm build"
         exit 1
     }
     Copy-Item $dist "$Pkg\frontend\dist" -Recurse

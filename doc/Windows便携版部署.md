@@ -59,7 +59,7 @@ cd pm
 
 **打包机需要**：
 - Python 3.9+（用来构建便携运行时）
-- Node.js 18+（仅当 `frontend/dist` 不存在时需要）
+- Node.js 18+ 与 pnpm（仅当 `frontend/dist` 不存在时需要）
 - 网络（下载 Python 依赖）
 
 **耗时**：约 1.5-2 分钟。
