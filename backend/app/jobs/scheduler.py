@@ -122,29 +122,36 @@ def job_daily_digest() -> None:
 def job_database_backup() -> None:
     """每日 02:00：数据库自动备份
 
-    调用容器内 backup.sh，由 pg_dump 生成压缩备份并清理旧文件。
-    备份目录需挂载到持久化卷，否则容器重建会丢失备份。
+    调用 scripts/backup.py（跨平台，Windows/Linux 通用）。
     """
     import subprocess
+    import sys as _sys
 
-    script = "/app/backup.sh"
-    if not Path(script).is_file():
+    # app/jobs/scheduler.py → 上溯到 backend/
+    backend_root = Path(__file__).resolve().parent.parent.parent
+    script = backend_root / "scripts" / "backup.py"
+
+    if not script.is_file():
         logger.warning("未找到备份脚本 %s，跳过备份", script)
         return
 
-    logger.info("开始数据库备份...")
+    logger.info("开始数据库备份（%s）...", script)
     try:
+        # 用当前 Python 解释器执行，确保能用同一虚拟环境
         result = subprocess.run(
-            ["sh", script],
+            [_sys.executable, str(script)],
             capture_output=True,
-            text=True,
             timeout=1800,
-            env={**os.environ},
+            cwd=str(backend_root),
+            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
         )
-        for line in (result.stdout or "").strip().splitlines():
+        # 手动解码：Windows 默认 GBK，子进程输出 UTF-8 会解码失败
+        stdout = (result.stdout or b"").decode("utf-8", errors="replace")
+        stderr = (result.stderr or b"").decode("utf-8", errors="replace")
+        for line in stdout.strip().splitlines():
             logger.info("[backup] %s", line)
         if result.returncode != 0:
-            logger.error("[backup] 备份失败: %s", (result.stderr or "").strip()[:500])
+            logger.error("[backup] 备份失败: %s", stderr.strip()[:500])
         else:
             logger.info("数据库备份完成")
     except subprocess.TimeoutExpired:

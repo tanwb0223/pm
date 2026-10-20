@@ -1,12 +1,8 @@
-# 产教融合项目管理系统 · Docker 运行时依赖（精简版）
+# 产教融合项目管理系统 · 生产运行依赖
 #
-# 与 requirements.txt 的差异：
-#   - 不含 pytest（开发用，省约 4MB）
-#   - uvicorn 用基础版而非 [standard]（去掉 uvloop 16MB、httptools、watchfiles）
-#     单机低并发场景性能差异可忽略；高并发场景可改回 uvicorn[standard]
+# 与 requirements.txt 的差异：不含 pytest（开发/测试用）
 #
-# 注意：reportlab 无法排除 Pillow —— 其 reportlab/lib/utils.py 第 15 行
-#      硬依赖 `from PIL import Image`，去掉会直接 ImportError。
+# 安装：pip install -r requirements.txt
 
 # ---------------------------------------------------------------- Web 框架
 fastapi==0.146.0

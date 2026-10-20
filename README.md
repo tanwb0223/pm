@@ -10,12 +10,16 @@ pm/
 │   ├── 产教融合项目管理系统-需求方案说明书-V1.4.docx   需求方案（含 42 条待确认事项）
 │   ├── 需求文档分析报告.md                            需求解读与疑点梳理
 │   ├── 功能缺失分析报告.md                            与通用项目管理软件的差距分析
+│   ├── 功能缺失复核报告.md                            代码实现与需求的逐项核对
 │   ├── 开发方案.md                                    技术选型、数据模型、工作量
-│   └── 部署文档.md                                    部署指南（Linux / Windows / Docker）
+│   ├── Linux原生部署指南.md                            Linux 部署（含内网离线）
+│   ├── Windows部署指南.md                              Windows 部署（含内网离线）
+│   └── 服务器配置建议.md                               配置选型与参数调优
 ├── backend/                    FastAPI + PostgreSQL 后端（84 个 API）
-├── frontend/                   React 18 + TypeScript + Ant Design 5 前端（20 个页面）
-├── Dockerfile                  单镜像构建（前端 + 后端）
-├── docker-compose.yml          应用 + PostgreSQL 编排
+├── frontend/                   React 18 + TypeScript + Ant Design 5 前端（21 个页面）
+├── pack.sh                     离线打包（同时产出 Linux 与 Windows 部署包）
+├── deploy-linux.sh             Linux 一键部署脚本
+├── deploy-windows.ps1          Windows 一键部署脚本
 └── README.md                   本文件
 ```
 

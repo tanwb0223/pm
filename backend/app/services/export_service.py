@@ -30,7 +30,7 @@ _FONT_CANDIDATES = [
     ("noto", Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc")),
     # Debian / Ubuntu
     ("wqy", Path("/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc")),
-    # Alpine（apk add font-wqy-zenhei 的实际安装位置，Docker 镜像用的就是它）
+    # 常见 Linux 发行版的中文字体安装位置
     ("wqy", Path("/usr/share/fonts/wqy-zenhei/wqy-zenhei.ttc")),
     ("wqy", Path("/usr/share/fonts/wqy/wqy-zenhei.ttc")),
 ]
