@@ -101,6 +101,12 @@ def init_db() -> None:
     Base.metadata.create_all(engine)
     logger.info("SQLite 表结构已就绪（%d 张表）", len(Base.metadata.tables))
 
+    # 写入 Alembic 版本标记
+    # 否则后续 alembic upgrade 会以为数据库是空的，重复建表
+    from app.db.alembic_sync import ensure_alembic_stamped
+
+    ensure_alembic_stamped(_url)
+
 
 def init_seed_data() -> None:
     """SQLite 首次建库时灌入基础数据
