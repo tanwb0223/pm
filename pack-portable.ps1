@@ -203,25 +203,7 @@ echo   产教融合项目管理系统
 echo ================================================
 echo.
 
-REM 检查配置文件
-if not exist "app\.env" (
-    echo [首次运行] 正在生成配置文件...
-    copy "app\.env.example" "app\.env" >nul 2>&1
-    if not exist "app\.env" (
-        echo [错误] 缺少 app\.env.example
-        pause
-        exit /b 1
-    )
-    echo.
-    echo ================================================
-    echo  请编辑 app\.env 填写数据库连接信息
-    echo  必填项：PM_DATABASE_URL
-    echo ================================================
-    echo.
-    notepad "app\.env"
-)
-
-REM 设置环境变量
+REM ---------------------------------------------------------------- 环境变量
 set "PM_DATA_DIR=%~dp0data"
 set "PM_UPLOAD_DIR=%~dp0data\upload"
 set "PM_BACKUP_DIR=%~dp0data\backup"
@@ -230,40 +212,32 @@ set "PM_FRONTEND_DIR=%~dp0frontend\dist"
 set "PYTHONIOENCODING=utf-8"
 set "PYTHONPATH=%~dp0app"
 
-echo [1/3] 检查数据库连接...
-"python\python.exe" -c "import sys; sys.path.insert(0,'app'); from app.core.config import settings; import psycopg; psycopg.connect(settings.database_url.replace('postgresql+psycopg://','postgresql://'), connect_timeout=5); print('  数据库连接正常')" 2>nul
-if errorlevel 1 (
-    echo.
-    echo [错误] 数据库连接失败
-    echo.
-    echo 请检查：
-    echo   1. PostgreSQL 是否已启动
-    echo   2. app\.env 中的 PM_DATABASE_URL 是否正确
-    echo.
-    echo 当前配置：
-    findstr /C:"PM_DATABASE_URL" "app\.env"
-    echo.
-    pause
-    exit /b 1
-)
+REM 默认使用 SQLite（零依赖，数据在 data\pm.db）
+REM 如需 PostgreSQL，在 app\.env 中配置 PM_DATABASE_URL
 
-echo [2/3] 执行数据库迁移...
-cd app
-"..\python\python.exe" -m alembic upgrade head
-if errorlevel 1 (
-    echo [错误] 迁移失败
-    cd ..
-    pause
-    exit /b 1
+echo [1/3] 检查配置...
+if exist "app\.env" (
+    echo   使用已有配置：app\.env
+) else (
+    echo   首次运行，使用默认配置（SQLite 零依赖）
 )
+echo.
+
+echo [2/3] 初始化数据库...
+cd app
+"..\python\python.exe" -m alembic upgrade head 2>nul
 cd ..
 
 echo [3/3] 启动服务...
 echo.
 echo ================================================
 echo   启动中，请稍候...
+echo.
 echo   访问地址：http://localhost:8000
 echo   停止服务：按 Ctrl+C 或双击 stop.bat
+echo.
+echo   数据目录：%~dp0data
+echo   数据库：  %~dp0data\pm.db
 echo ================================================
 echo.
 
@@ -274,7 +248,8 @@ echo 服务已停止
 pause
 '@ | Set-Content "$Pkg\start.bat" -Encoding Default
 
-    # ---- stop.bat
+    
+# ---- stop.bat
     @'
 @echo off
 chcp 65001 >nul
@@ -292,11 +267,15 @@ timeout /t 2 >nul
 
 一、首次使用
 
-  1. 确保服务器已安装 PostgreSQL 18（这是唯一需要预装的软件）
-  2. 双击 start.bat
-  3. 首次运行会自动打开配置文件，填写数据库连接：
-        PM_DATABASE_URL=postgresql+psycopg://用户名:密码@127.0.0.1:5432/数据库名
-  4. 保存后重新双击 start.bat
+  1. 双击 start.bat
+  2. 浏览器打开 http://localhost:8000
+  3. 首次启动会自动创建数据库（SQLite），无需任何配置
+
+  就这么简单，不需要安装 Python、Node.js、数据库等任何软件。
+
+  初始账号：admin
+  初始密码：Admin@123
+  （首次登录后请立即修改）
 
 二、日常使用
 
@@ -334,8 +313,10 @@ timeout /t 2 >nul
 
 六、管理员账号
 
-  首次部署后需初始化，在 start.bat 所在目录打开命令行：
-      python\python.exe app\scripts\seed_admin.py admin 你的密码
+  首次启动后，在 start.bat 所在目录打开命令行（Shift+右键 → 在此处打开 PowerShell）：
+      .\python\python.exe app\scripts\seed_admin.py admin 你的密码
+
+  注意：必须在服务启动过一次之后执行（首次启动会自动建库）。
 
 ============================================================
 '@ | Set-Content "$Pkg\使用说明.txt" -Encoding UTF8
@@ -363,9 +344,9 @@ timeout /t 2 >nul
     Write-Host "  目标机使用："
     Write-Host "    1. 解压到任意目录，例如 D:\pm"
     Write-Host "    2. 双击 start.bat"
-    Write-Host "    3. 按提示填写数据库连接"
+    Write-Host "    3. 浏览器访问 http://localhost:8000"
     Write-Host ""
-    Write-Host "  前提：目标机已装 PostgreSQL 18（唯一要求）"
+    Write-Host "  不需要安装任何软件（Python 和 SQLite 已内置）"
     Write-Host ""
 
 } finally {

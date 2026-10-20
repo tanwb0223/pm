@@ -14,13 +14,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from sqlalchemy import select  # noqa: E402
 
 from app.core.security import hash_password  # noqa: E402
-from app.db.session import SessionLocal  # noqa: E402
+from app.db.session import SessionLocal, init_db, init_seed_data  # noqa: E402
 from app.models.system import SysRole, SysUser, SysUserRole  # noqa: E402
 
 
 def main() -> None:
     staff_no = sys.argv[1] if len(sys.argv) > 1 else "admin"
     password = sys.argv[2] if len(sys.argv) > 2 else "Admin@123"
+
+    # SQLite 模式下自动建表并灌基础数据
+    # （幂等，已初始化过则跳过）
+    init_db()
+    init_seed_data()
 
     db = SessionLocal()
     try:
@@ -41,7 +46,7 @@ def main() -> None:
 
         role = db.scalar(select(SysRole).where(SysRole.code == "SYS_ADMIN"))
         if role is None:
-            raise RuntimeError("缺少 SYS_ADMIN 角色，请先执行 alembic upgrade head")
+            raise RuntimeError("缺少 SYS_ADMIN 角色，数据库可能未初始化")
 
         exists = db.scalar(
             select(SysUserRole).where(
