@@ -212,7 +212,7 @@ stmt = apply_scope(stmt, user, ProjSub)   # 自动按 scope 过滤
 | GET | `/api/colleges` | 学院列表 | 登录 |
 | POST | `/api/colleges` | 新增学院 | `system:org` |
 | PUT | `/api/colleges/{id}` | 编辑学院 | `system:org` |
-| DELETE | `/api/colleges/{id}` | 删除学院（有项目时拒绝） | `system:org` |
+| DELETE | `/api/colleges/{id}` | 删除学院（有项目 / 子项目 / 用户 / 下级组织时拒绝） | `system:org` |
 | GET | `/api/majors` | 大项目分页列表 | 登录 + 数据范围 |
 | GET | `/api/majors/{id}` | 大项目详情（含学院分工） | 登录 + 数据范围 |
 | POST | `/api/majors` | 新建大项目 | `project:major:edit` |
@@ -241,6 +241,9 @@ stmt = apply_scope(stmt, user, ProjSub)   # 自动按 scope 过滤
 | 结项需进度 100% | 文档 6.1 第 6 项 | `update_sub` 校验 |
 | 已结项子项目不能删除 | 文档 6.1 第 6 项 | `delete_sub` 校验 |
 | 学院下有子项目时不能移除/删除 | 一致性 | `remove_major_college` / `delete_college` |
+| 学院编码全局唯一（编辑时排除自身） | 一致性 | `create_college` / `update_college` |
+| 上级组织必须存在、不能自引用、不能成环 | 一致性 | `_check_parent_college` |
+| 学院仍被用户 / 子项目 / 下级组织引用时不能删除 | 一致性 | `delete_college` 四项前置校验 |
 | 数据范围过滤 | 3.5 / 第 30 项 | `apply_scope` 统一注入 |
 
 ### 状态迁移图

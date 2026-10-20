@@ -301,7 +301,10 @@ export default function UserPage() {
         open={importOpen}
         kind="user"
         onClose={() => setImportOpen(false)}
-        onSuccess={() => qc.invalidateQueries({ queryKey: ['system-users'] })}
+        onSuccess={() => {
+          qc.invalidateQueries({ queryKey: ['users'] })
+          qc.invalidateQueries({ queryKey: ['colleges'] })
+        }}
       />
     </div>
   )

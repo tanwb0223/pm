@@ -104,7 +104,7 @@ src/
 │   ├── auth.ts         token / 用户 / 权限判断
 │   └── dict.ts         学院、大项目下拉缓存
 ├── types/index.ts      全部 TS 类型
-└── pages/              20 个页面
+└── pages/              22 个页面
 ```
 
 ## 页面清单
@@ -118,12 +118,14 @@ src/
 | 项目 | 大项目详情（学院分工 + 子项目） | `/project/majors/:id` |
 | 项目 | 子项目列表 | `/project/subs` |
 | 进度 | **进度总表**（最高频） | `/progress/table` |
+| 进度 | 学院横向对比 | `/progress/college-compare` |
 | 预警 | 预警中心（折叠聚合 + 处置） | `/alert/center` |
 | 预警 | 预警统计 | `/alert/stats` |
 | 报表 | 报表列表 | `/report/list` |
 | 报表 | **报表填报**（周报初稿） | `/report/fill` |
 | 报表 | 报表及时率 | `/report/timeliness` |
 | 风险 | 风险登记 | `/risk/list` |
+| 系统 | 组织管理（学院增删改 + 批量导入） | `/system/org` |
 | 系统 | 用户管理 | `/system/users` |
 | 系统 | 角色权限（3 Tab） | `/system/roles` |
 | 系统 | 认证方式（9 种协议） | `/system/auth-providers` |
@@ -250,6 +252,7 @@ server {
 | 进度条可读性 | ✅（加宽 + 按进度着色 + 数字） |
 | antd 弃用警告 | ✅（`destroyOnClose` → `destroyOnHidden`） |
 | favicon 404 | ✅（内联 SVG） |
+| 组织管理页（新增 / 编辑 / 权限菜单） | ✅（无头浏览器真实点击验证，接口同步校验） |
 
 ## 已知限制
 

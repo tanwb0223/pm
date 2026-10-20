@@ -3,6 +3,7 @@ import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   AlertOutlined,
+  ApartmentOutlined,
   AuditOutlined,
   BarChartOutlined,
   CalendarOutlined,
@@ -66,6 +67,31 @@ export default function AppLayout() {
     refetchInterval: 60 * 1000,
   })
 
+  // 系统管理二级菜单（按权限过滤：只挂了 system:org 的账号不应看到用户管理、参数配置）
+  const systemChildren = useMemo(() => {
+    const list: { key: string; label: string; icon?: JSX.Element }[] = []
+    if (hasPerm('system:org')) {
+      list.push({ key: '/system/org', label: '组织管理', icon: <ApartmentOutlined /> })
+    }
+    if (hasPerm('system:user')) {
+      list.push({ key: '/system/users', label: '用户管理', icon: <TeamOutlined /> })
+    }
+    if (hasPerm('system:role')) {
+      list.push({ key: '/system/roles', label: '角色权限', icon: <SafetyOutlined /> })
+      list.push({ key: '/system/auth-providers', label: '认证方式', icon: <AuditOutlined /> })
+    }
+    if (hasPerm('system:config')) {
+      list.push({ key: '/system/configs', label: '参数配置', icon: <DatabaseOutlined /> })
+    }
+    if (hasPerm('system:holiday')) {
+      list.push({ key: '/system/holidays', label: '免填日历', icon: <CalendarOutlined /> })
+    }
+    if (hasPerm('system:audit')) {
+      list.push({ key: '/system/audit', label: '操作日志', icon: <AuditOutlined /> })
+    }
+    return list
+  }, [hasPerm])
+
   const menuItems = useMemo(() => {
     const items: { key: string; icon: JSX.Element; label: React.ReactNode }[] = [
       {
@@ -117,28 +143,20 @@ export default function AppLayout() {
     if (hasPerm('risk:list')) {
       items.push({ key: '/risk/list', icon: <WarningOutlined />, label: '风险登记' })
     }
-    if (hasPerm('system:user') || hasPerm('system:role')) {
+    // 只要有任何系统管理子菜单，就显示一级菜单
+    if (systemChildren.length > 0) {
       items.push({ key: 'system', icon: <SettingOutlined />, label: '系统管理' } as never)
     }
     return items
-  }, [hasPerm, todo])
+  }, [hasPerm, todo, systemChildren])
 
-  // 二级菜单
   const childrenMap: Record<string, { key: string; label: string; icon?: JSX.Element }[]> = {
     project: [
       { key: '/project/majors', label: '大项目' },
       { key: '/project/subs', label: '子项目' },
     ],
-    system: [
-      { key: '/system/users', label: '用户管理', icon: <TeamOutlined /> },
-      { key: '/system/roles', label: '角色权限', icon: <SafetyOutlined /> },
-      { key: '/system/auth-providers', label: '认证方式', icon: <AuditOutlined /> },
-      { key: '/system/configs', label: '参数配置', icon: <DatabaseOutlined /> },
-      { key: '/system/holidays', label: '免填日历', icon: <CalendarOutlined /> },
-      { key: '/system/audit', label: '操作日志', icon: <AuditOutlined /> },
-    ],
+    system: systemChildren,
   }
-
   const finalItems = menuItems.map((item) => {
     const children = childrenMap[item.key]
     if (children) {

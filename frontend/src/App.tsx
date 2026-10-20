@@ -16,6 +16,7 @@ import ReportFillPage from '@/pages/Report/Fill'
 import TimelinessPage from '@/pages/Report/Timeliness'
 import RiskListPage from '@/pages/Risk/List'
 import UserPage from '@/pages/System/User'
+import OrgPage from '@/pages/System/Org'
 import RolePage from '@/pages/System/Role'
 import ConfigPage from '@/pages/System/Config'
 import HolidayPage from '@/pages/System/Holiday'
@@ -67,6 +68,7 @@ export default function App() {
         <Route path="risk/list" element={<RiskListPage />} />
 
         <Route path="system/users" element={<UserPage />} />
+        <Route path="system/org" element={<OrgPage />} />
         <Route path="system/roles" element={<RolePage />} />
         <Route path="system/configs" element={<ConfigPage />} />
         <Route path="system/holidays" element={<HolidayPage />} />

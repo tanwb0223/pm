@@ -44,6 +44,8 @@ class ProjectService:
             exists = self.db.scalar(select(SysCollege).where(SysCollege.code == body.code))
             if exists:
                 raise BusinessError(f"学院编码已存在：{body.code}")
+        if body.parent_id is not None:
+            self._check_parent_college(body.parent_id, None)
         c = SysCollege(**body.model_dump())
         self.db.add(c)
         self.db.flush()
@@ -53,12 +55,44 @@ class ProjectService:
         c = self.db.get(SysCollege, college_id)
         if c is None:
             raise NotFoundError("学院不存在")
+        if body.code and body.code != c.code:
+            exists = self.db.scalar(
+                select(SysCollege).where(
+                    SysCollege.code == body.code, SysCollege.id != college_id
+                )
+            )
+            if exists:
+                raise BusinessError(f"学院编码已存在：{body.code}")
+        if body.parent_id is not None:
+            self._check_parent_college(body.parent_id, college_id)
         for k, v in body.model_dump().items():
             setattr(c, k, v)
         self.db.flush()
         return c
 
+    def _check_parent_college(self, parent_id: int, self_id: int | None) -> None:
+        """上级组织校验：必须存在、不能是自己、不能形成环"""
+        if self_id is not None and parent_id == self_id:
+            raise BusinessError("上级组织不能是自己")
+        seen: set[int] = set()
+        cur: int | None = parent_id
+        while cur is not None:
+            if cur in seen:
+                raise BusinessError("上级组织存在循环引用")
+            seen.add(cur)
+            node = self.db.get(SysCollege, cur)
+            if node is None:
+                raise BusinessError("上级组织不存在")
+            if self_id is not None and node.id == self_id:
+                raise BusinessError("上级组织不能是自己的下级")
+            cur = node.parent_id
+
     def delete_college(self, college_id: int) -> None:
+        c = self.db.get(SysCollege, college_id)
+        if c is None:
+            raise NotFoundError("学院不存在")
+
+        # 1) 仍被大项目引用
         used = self.db.scalar(
             select(func.count()).select_from(ProjMajorCollege).where(
                 ProjMajorCollege.college_id == college_id
@@ -66,9 +100,30 @@ class ProjectService:
         )
         if used:
             raise BusinessError("该学院已有参与项目，不能删除")
-        c = self.db.get(SysCollege, college_id)
-        if c is None:
-            raise NotFoundError("学院不存在")
+
+        # 2) 仍有子项目归属（正常流程下先有参与项目，这里兜底）
+        subs = self.db.scalar(
+            select(func.count()).select_from(ProjSub).where(ProjSub.college_id == college_id)
+        )
+        if subs:
+            raise BusinessError("该学院下还有子项目，不能删除")
+
+        # 3) 仍有用户归属
+        users = self.db.scalar(
+            select(func.count()).select_from(SysUser).where(SysUser.college_id == college_id)
+        )
+        if users:
+            raise BusinessError(f"该学院下还有 {users} 名用户，请先调整其所属学院")
+
+        # 4) 仍有下级组织
+        children = self.db.scalar(
+            select(func.count()).select_from(SysCollege).where(
+                SysCollege.parent_id == college_id
+            )
+        )
+        if children:
+            raise BusinessError("该学院下还有下级组织，请先删除或调整下级组织")
+
         self.db.delete(c)
         self.db.flush()
 
