@@ -508,7 +508,7 @@ function PermTab({ canWrite }: { canWrite: boolean }) {
         grouped.map(([type, list]) => (
           <div key={type} style={{ marginBottom: 24 }}>
             <div style={{ fontWeight: 600, marginBottom: 8 }}>{PERM_TYPE_LABEL[type] ?? type}</div>
-            <Table rowKey="id" columns={columns} dataSource={list} pagination={false} size="small" />
+            <Table rowKey="id" columns={columns} dataSource={list} pagination={false} />
           </div>
         ))
       )}

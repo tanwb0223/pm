@@ -15,17 +15,18 @@ import {
   Select,
   Space,
   Switch,
-  Table,
   Tag,
   Tooltip,
 } from 'antd'
 import { ThunderboltOutlined } from '@ant-design/icons'
 
+import DataTable from '@/components/DataTable'
 import PageHeader from '@/components/PageHeader'
 import { reportApi, subApi } from '@/api'
 import { useCan } from '@/stores/auth'
 import { fmtDateTime } from '@/lib/constants'
 import type { PendingReport } from '@/types'
+import { PAGE_SIZE, tablePagination } from '@/lib/pagination'
 
 const { TextArea } = Input
 
@@ -116,6 +117,8 @@ function ReportFillPageInner() {
   const [onlyOverdue, setOnlyOverdue] = useState(false)
   // 历史逾期可能很多（回溯到计划开始），默认只看最近 90 天，可切换全部
   const [showAllHistory, setShowAllHistory] = useState(false)
+  const [pendingPage, setPendingPage] = useState(1)
+  const [pendingPageSize, setPendingPageSize] = useState(PAGE_SIZE)
   const { data: pending = [], isLoading: pendingLoading } = useQuery({
     queryKey: ['report-pending'],
     queryFn: reportApi.pending,
@@ -350,7 +353,7 @@ function ReportFillPageInner() {
               <Space size={8}>
                 <Tooltip title="默认只看最近 90 天">
                   <Space size={4}>
-                    <span style={{ color: '#4b5563', fontSize: 12 }}>全部</span>
+                    <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>全部</span>
                     <Switch
                       size="small"
                       checked={showAllHistory}
@@ -359,7 +362,7 @@ function ReportFillPageInner() {
                   </Space>
                 </Tooltip>
                 <Space size={4}>
-                  <span style={{ color: '#4b5563', fontSize: 12 }}>只看逾期</span>
+                  <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>只看逾期</span>
                   <Switch size="small" checked={onlyOverdue} onChange={setOnlyOverdue} />
                 </Space>
                 {canGrant && (
@@ -370,19 +373,22 @@ function ReportFillPageInner() {
               </Space>
             }
           >
-            <Table
+            <DataTable<PendingReport>
               rowKey={(r) => `${r.sub_id}-${r.type}-${r.period_start}`}
               size="small"
               loading={pendingLoading}
               columns={pendingColumns}
               dataSource={pendingShown}
-              scroll={{ y: 480 }}
-              pagination={{
-                pageSize: 10,
-                size: 'small',
-                showSizeChanger: false,
-                showTotal: (t) => `共 ${t} 条`,
-              }}
+              minTableWidth={720}
+              pagination={tablePagination({
+                current: pendingPage,
+                pageSize: pendingPageSize,
+                total: pendingShown.length,
+                onChange: (p, ps) => {
+                  setPendingPage(p)
+                  setPendingPageSize(ps)
+                },
+              })}
               locale={{ emptyText: '暂无待填报表' }}
             />
           </Card>
@@ -396,8 +402,7 @@ function ReportFillPageInner() {
             <span>{picked ? '补填报表' : '填报报表'}</span>
             {picked ? <Tag color="orange">补填</Tag> : <Tag color="green">本期</Tag>}
           </Space>
-        }
-        okText={picked ? '提交补填' : '提交报表'}
+        }        okText={picked ? '提交补填' : '提交报表'}
         cancelText="取消"
         confirmLoading={submitMut.isPending}
         onOk={handleSubmit}
@@ -441,30 +446,15 @@ function ReportFillPageInner() {
               type="warning"
               showIcon
               style={{ marginBottom: 16 }}
-              message={
-                <Space size={6}>
-                  <Tag color="orange">补填</Tag>
-                  <span>
-                    {picked.period_start} ~ {picked.period_end}
-                  </span>
-                </Space>
-              }
-              description={`截止 ${fmtDateTime(picked.deadline)}。补填按该周期记录，并同步更新子项目进度。`}
+              message={`补填 ${picked.period_start} ~ ${picked.period_end}（截止 ${fmtDateTime(picked.deadline)}）`}
+              description="补填按该周期记录，并同步更新子项目进度"
             />
           ) : period ? (
             <Alert
-              type="success"
+              type="info"
               showIcon
               style={{ marginBottom: 16 }}
-              message={
-                <Space size={6}>
-                  <Tag color="green">本期</Tag>
-                  <span>
-                    {period.period_start} ~ {period.period_end}
-                  </span>
-                </Space>
-              }
-              description={`截止 ${fmtDateTime(period.deadline)}。`}
+              message={`本期 ${period.period_start} ~ ${period.period_end}（截止 ${fmtDateTime(period.deadline)}）`}
             />
           ) : null}
 
@@ -583,7 +573,7 @@ function ReportFillPageInner() {
         onCancel={() => setGraceOpen(false)}
         destroyOnClose
       >
-        <p style={{ color: '#6b7280', marginBottom: 16 }}>
+        <p style={{ color: 'var(--text-secondary)', marginBottom: 16 }}>
           超过补填期的报表，开启后填报人可在有效期内补交。留空周期表示放行该类型的所有历史周期。
         </p>
         <Form form={graceForm} layout="vertical" preserve={false}>

@@ -27,6 +27,7 @@ import { fmtDate } from '@/lib/constants'
 import { useDictStore } from '@/stores/dict'
 import { useAuthStore, useCan } from '@/stores/auth'
 import type { RiskItem, Sub } from '@/types'
+import { tablePagination } from '@/lib/pagination'
 
 const LEVEL_OPTIONS = [
   { value: 'HIGH', label: '高' },
@@ -295,18 +296,15 @@ export default function RiskListPage() {
 
       <DataTable
         rowKey="id"
-        size="small"
         loading={isLoading}
         columns={columns}
         dataSource={data?.items ?? []}
-        pagination={{
+        pagination={tablePagination({
           current: params.page,
           pageSize: params.page_size,
           total: data?.total ?? 0,
-          showSizeChanger: true,
-          showTotal: (t) => `共 ${t} 条`,
           onChange: (page, page_size) => setParams((p) => ({ ...p, page, page_size })),
-        }}
+        })}
       />
 
       <Modal

@@ -32,6 +32,7 @@ import { SUB_STATUS_LABEL, fmtDate, fmtDateTime } from '@/lib/constants'
 import { useDictStore } from '@/stores/dict'
 import { useCan } from '@/stores/auth'
 import type { ProgressRow } from '@/types'
+import { tablePagination } from '@/lib/pagination'
 
 /** 留痕记录（subApi.records 返回项） */
 interface ProgressRecord {
@@ -442,14 +443,12 @@ export default function ProgressTablePage() {
             />
           ),
         }}
-        pagination={{
+        pagination={tablePagination({
           current: page,
           pageSize: PAGE_SIZE,
           total: data?.total ?? 0,
-          showSizeChanger: false,
-          showTotal: (t) => `共 ${t} 条`,
           onChange: (p) => setPage(p),
-        }}
+        })}
       />
 
       <Modal

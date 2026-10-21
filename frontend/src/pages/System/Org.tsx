@@ -12,7 +12,6 @@ import {
   Result,
   Select,
   Space,
-  Table,
   Tag,
   Typography,
 } from 'antd'
@@ -20,8 +19,10 @@ import { PlusOutlined, UploadOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 
 import PageHeader from '@/components/PageHeader'
+import DataTable from '@/components/DataTable'
 import ImportModal from '@/components/ImportModal'
 import { collegeApi } from '@/api'
+import { PAGE_SIZE, tablePagination } from '@/lib/pagination'
 import { useAuthStore, useCan } from '@/stores/auth'
 import type { College } from '@/types'
 
@@ -47,6 +48,8 @@ export default function OrgPage() {
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<College | null>(null)
   const [importOpen, setImportOpen] = useState(false)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(PAGE_SIZE)
   const [form] = Form.useForm<OrgFormValues>()
 
   const { data, isLoading } = useQuery({ queryKey: ['colleges'], queryFn: collegeApi.list })
@@ -231,15 +234,25 @@ export default function OrgPage() {
         />
       )}
 
-      <Table<College>
+      <DataTable<College>
         rowKey="id"
         loading={isLoading}
         columns={columns}
         dataSource={colleges}
-        pagination={false}
+        minTableWidth={760}
+        pagination={tablePagination({
+          current: page,
+          pageSize,
+          total: colleges.length,
+          onChange: (p, ps) => {
+            setPage(p)
+            setPageSize(ps)
+          },
+          unit: '个',
+        })}
         footer={() => (
           <Typography.Text type="secondary" style={{ fontSize: 13 }}>
-            共 {colleges.length} 个组织；已有用户、参与项目或子项目的学院不能删除
+            已有用户、参与项目或子项目的学院不能删除
           </Typography.Text>
         )}
       />

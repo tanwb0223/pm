@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Card, Col, Progress, Row, Select, Space, Table, Tag, Tooltip } from 'antd'
+import { Card, Col, Progress, Row, Select, Space, Tag, Tooltip } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import type { EChartsOption } from '@/lib/echarts'
 
 import Chart from '@/components/Chart'
+import DataTable from '@/components/DataTable'
 import PageHeader from '@/components/PageHeader'
 import { progressApi } from '@/api'
 import { deviationColor } from '@/lib/constants'
@@ -268,12 +269,13 @@ export default function CollegeComparePage() {
       </Row>
 
       <Card title="明细" size="small">
-        <Table<CollegeCompareRow>
+        <DataTable<CollegeCompareRow>
           rowKey="college_id"
           size="small"
           loading={isLoading}
           columns={columns}
           dataSource={data}
+          minTableWidth={900}
           pagination={false}
           locale={{ emptyText: '暂无数据' }}
         />

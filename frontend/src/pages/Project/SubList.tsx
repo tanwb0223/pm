@@ -23,6 +23,7 @@ import PageHeader from '@/components/PageHeader'
 import { SubStatusTag } from '@/components/Tags'
 import { majorApi, subApi, systemApi } from '@/api'
 import { SUB_STATUS_LABEL, fmtDate } from '@/lib/constants'
+import { PAGE_SIZE, tablePagination } from '@/lib/pagination'
 import { useDictStore } from '@/stores/dict'
 import { useCan } from '@/stores/auth'
 import type { Sub } from '@/types'
@@ -108,7 +109,7 @@ export default function SubListPage() {
   const [fStatus, setFStatus] = useState<string | undefined>()
   const [fKeyword, setFKeyword] = useState('')
   const [page, setPage] = useState(1)
-  const pageSize = 20
+  const [pageSize, setPageSize] = useState(PAGE_SIZE)
 
   const queryParams = useMemo(
     () => ({
@@ -375,14 +376,15 @@ export default function SubListPage() {
         loading={isLoading}
         columns={columns}
         dataSource={data?.items ?? []}
-        pagination={{
+        pagination={tablePagination({
           current: page,
           pageSize,
           total: data?.total ?? 0,
-          showSizeChanger: false,
-          showTotal: (t) => `共 ${t} 条`,
-          onChange: (p) => setPage(p),
-        }}
+          onChange: (p, ps) => {
+            setPage(p)
+            setPageSize(ps)
+          },
+        })}
         minTableWidth={1300}
       />
 

@@ -159,7 +159,6 @@ export default function DashboardPage() {
           dataSource={(todo?.alerts ?? []).slice(0, 10)}
           loading={todoLoading}
           pagination={false}
-          size="middle"
           locale={{ emptyText: <Empty description="暂无待办" /> }}
         />
       </Card>
@@ -172,7 +171,6 @@ export default function DashboardPage() {
           dataSource={pendingReports ?? []}
           loading={pendingLoading}
           pagination={false}
-          size="middle"
           locale={{ emptyText: <Empty description="暂无待办" /> }}
         />
       </Card>

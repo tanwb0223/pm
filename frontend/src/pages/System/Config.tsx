@@ -8,6 +8,7 @@ import DataTable from '@/components/DataTable'
 import PageHeader from '@/components/PageHeader'
 import { systemApi } from '@/api'
 import { useAuthStore, useCan } from '@/stores/auth'
+import { tablePagination } from '@/lib/pagination'
 
 interface ConfigRow {
   key: string
@@ -130,20 +131,17 @@ function ConfigPageInner() {
         columns={columns}
         dataSource={rows}
         loading={isLoading}
-        size="middle"
         minTableWidth={760}
-        pagination={{
+        pagination={tablePagination({
           current: page,
           pageSize,
           total: rows.length,
-          showSizeChanger: true,
-          pageSizeOptions: [20, 50, 100, 200],
-          showTotal: (t) => `共 ${t} 项`,
           onChange: (p, ps) => {
             setPage(p)
             setPageSize(ps)
           },
-        }}
+          unit: '项',
+        })}
       />
 
       <Modal

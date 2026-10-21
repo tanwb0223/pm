@@ -24,6 +24,7 @@ import PageHeader from '@/components/PageHeader'
 import { MajorStatusTag } from '@/components/Tags'
 import { exportApi, majorApi, systemApi } from '@/api'
 import { MAJOR_STATUS_LABEL, MAJOR_TYPES, fmtDate } from '@/lib/constants'
+import { PAGE_SIZE, tablePagination } from '@/lib/pagination'
 import { useAuthStore, useCan } from '@/stores/auth'
 import type { Major } from '@/types'
 
@@ -84,7 +85,7 @@ export default function MajorListPage() {
   const [type, setType] = useState<string | undefined>()
   const [status, setStatus] = useState<string | undefined>()
   const [page, setPage] = useState(1)
-  const pageSize = 20
+  const [pageSize, setPageSize] = useState(PAGE_SIZE)
 
   const queryParams = useMemo(
     () => ({
@@ -326,14 +327,15 @@ export default function MajorListPage() {
         loading={isLoading}
         columns={columns}
         dataSource={data?.items ?? []}
-        pagination={{
+        pagination={tablePagination({
           current: page,
           pageSize,
           total: data?.total ?? 0,
-          showSizeChanger: false,
-          showTotal: (t) => `共 ${t} 条`,
-          onChange: (p) => setPage(p),
-        }}
+          onChange: (p, ps) => {
+            setPage(p)
+            setPageSize(ps)
+          },
+        })}
         minTableWidth={1100}
       />
 

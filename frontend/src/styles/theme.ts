@@ -38,7 +38,10 @@ export const neutral = {
   text: '#1f2937',
   textSecondary: '#6b7280',
   textTertiary: '#9ca3af',
-  textDisabled: '#d1d5db',
+  // 禁用态文字：原 #d1d5db 在白色背景上对比度仅约 1.4:1，
+  // 按钮类禁用控件（如补填弹窗里锁定的报表类型）几乎看不清。
+  // 提到 #9ca3af（对比度约 2.8:1），既明显弱于正文，又保持可读。
+  textDisabled: '#9ca3af',
 
   /** 边框 */
   border: '#e5e7eb',
@@ -119,6 +122,9 @@ export const antdTheme = {
 
     colorBgLayout: neutral.bgBody,
     colorBgContainer: neutral.bgCard,
+    // 按钮型 Radio / Select 等禁用态背景：用浅灰而非透明，
+    // 与深一档的禁用文字搭配，既显示"不可编辑"又不糊成一片
+    colorBgContainerDisabled: '#f3f4f6',
 
     borderRadius: radius.base,
     borderRadiusLG: radius.lg,

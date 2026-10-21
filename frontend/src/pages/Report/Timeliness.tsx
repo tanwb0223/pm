@@ -11,14 +11,15 @@ import {
   Select,
   Space,
   Statistic,
-  Table,
   Tag,
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import dayjs, { type Dayjs } from 'dayjs'
 
 import PageHeader from '@/components/PageHeader'
+import DataTable from '@/components/DataTable'
 import { reportApi } from '@/api'
+import { PAGE_SIZE, tablePagination } from '@/lib/pagination'
 import { REPORT_TYPE_LABEL, fmtDate, fmtDateTime } from '@/lib/constants'
 import { useDictStore } from '@/stores/dict'
 import type { TimelinessDetailRow } from '@/types'
@@ -43,7 +44,7 @@ export default function TimelinessPage() {
   const [majorId, setMajorId] = useState<number | undefined>()
   const [state, setState] = useState<string>('ALL')
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(20)
+  const [pageSize, setPageSize] = useState(PAGE_SIZE)
 
   const start = range[0].format('YYYY-MM-DD')
   const end = range[1].format('YYYY-MM-DD')
@@ -242,23 +243,23 @@ export default function TimelinessPage() {
           />
         }
       >
-        <Table<TimelinessDetailRow>
+        <DataTable<TimelinessDetailRow>
           rowKey={(r) => `${r.sub_id}-${r.type}-${r.period_start}`}
           size="small"
           loading={detailLoading}
           columns={columns}
           dataSource={detail?.items ?? []}
-          pagination={{
+          minTableWidth={1100}
+          pagination={tablePagination({
             current: page,
             pageSize,
             total: detail?.total ?? 0,
-            showSizeChanger: true,
-            showTotal: (t) => `共 ${t} 期`,
             onChange: (p, ps) => {
               setPage(p)
               setPageSize(ps)
             },
-          }}
+            unit: '期',
+          })}
           locale={{ emptyText: '该区间内没有应报期次' }}
         />
       </Card>

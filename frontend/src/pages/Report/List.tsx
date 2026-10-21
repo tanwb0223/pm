@@ -28,6 +28,7 @@ import { REPORT_TYPE_LABEL, fmtDate, fmtDateTime } from '@/lib/constants'
 import { useDictStore } from '@/stores/dict'
 import { useAuthStore, useCan } from '@/stores/auth'
 import type { ReportItem } from '@/types'
+import { tablePagination } from '@/lib/pagination'
 
 interface ListParams {
   type?: string
@@ -151,7 +152,6 @@ export default function ReportListPage() {
         <Space size={4}>
           <Button
             type="link"
-            size="small"
             icon={<EyeOutlined />}
             onClick={async () => {
               const d = await reportApi.detail(r.id)
@@ -234,18 +234,15 @@ export default function ReportListPage() {
 
       <DataTable
         rowKey="id"
-        size="small"
         loading={isLoading}
         columns={columns}
         dataSource={data?.items ?? []}
-        pagination={{
+        pagination={tablePagination({
           current: params.page,
           pageSize: params.page_size,
           total: data?.total ?? 0,
-          showSizeChanger: true,
-          showTotal: (t) => `共 ${t} 条`,
           onChange: (page, page_size) => setParams((p) => ({ ...p, page, page_size })),
-        }}
+        })}
       />
 
       {/* 详情抽屉 */}
@@ -277,7 +274,6 @@ export default function ReportListPage() {
             </Descriptions>
             <Descriptions
               column={1}
-              size="small"
               bordered
               style={{ marginTop: 16 }}
               title="报表内容"

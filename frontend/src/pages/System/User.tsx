@@ -23,6 +23,7 @@ import { systemApi, collegeApi } from '@/api'
 import { fmtDateTime } from '@/lib/constants'
 import { useAuthStore, useCan } from '@/stores/auth'
 import type { UserItem } from '@/types'
+import { tablePagination } from '@/lib/pagination'
 
 /** 用户管理（权限守卫在外层，内层只在有权限时挂载，避免 Hook 数量变化） */
 export default function UserPage() {
@@ -256,17 +257,15 @@ function UserPageInner() {
         columns={columns}
         dataSource={data?.items ?? []}
         loading={isLoading}
-        pagination={{
+        pagination={tablePagination({
           current: page,
           pageSize,
           total: data?.total ?? 0,
-          showSizeChanger: true,
-          showTotal: (t) => `共 ${t} 条`,
           onChange: (p, ps) => {
             setPage(p)
             setPageSize(ps)
           },
-        }}
+        })}
       />
 
       <Modal

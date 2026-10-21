@@ -26,6 +26,7 @@ import { ALERT_LEVEL_LABEL, ALERT_STATUS_LABEL, ALERT_TYPE_LABEL, daysLeft, fmtD
 import { useDictStore } from '@/stores/dict'
 import { useCan } from '@/stores/auth'
 import type { Alert, AlertGroup } from '@/types'
+import { tablePagination } from '@/lib/pagination'
 
 /** 不可关闭/忽略的预警类型（只能补齐数据自动关闭） */
 const IMMUTABLE_TYPES = new Set(['AL-09', 'AL-10'])
@@ -382,13 +383,12 @@ export default function AlertCenterPage() {
         columns={columns}
         dataSource={data?.items ?? []}
         minTableWidth={1200}
-        pagination={{
+        pagination={tablePagination({
           current: page,
           pageSize: PAGE_SIZE,
           total: data?.total ?? 0,
-          showTotal: (t) => `共 ${t} 条`,
           onChange: (p) => setPage(p),
-        }}
+        })}
       />
 
       {/* 关闭：理由可选 */}

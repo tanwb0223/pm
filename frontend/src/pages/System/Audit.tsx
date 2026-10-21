@@ -9,6 +9,7 @@ import PageHeader from '@/components/PageHeader'
 import { systemApi } from '@/api'
 import { fmtDateTime } from '@/lib/constants'
 import { useAuthStore, useCan } from '@/stores/auth'
+import { tablePagination } from '@/lib/pagination'
 
 interface AuditRow {
   id: number
@@ -170,17 +171,15 @@ export default function AuditPage() {
         columns={columns}
         dataSource={(data?.items ?? []) as unknown as AuditRow[]}
         loading={isLoading}
-        pagination={{
+        pagination={tablePagination({
           current: page,
           pageSize,
           total: data?.total ?? 0,
-          showSizeChanger: true,
-          showTotal: (t) => `共 ${t} 条`,
           onChange: (p, ps) => {
             setPage(p)
             setPageSize(ps)
           },
-        }}
+        })}
         size="middle"
       />
     </div>

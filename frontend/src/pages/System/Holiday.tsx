@@ -23,6 +23,7 @@ import type { ColumnsType } from 'antd/es/table'
 
 import PageHeader from '@/components/PageHeader'
 import { systemApi } from '@/api'
+import { PAGE_SIZE, tablePagination } from '@/lib/pagination'
 import { useAuthStore, useCan } from '@/stores/auth'
 
 interface HolidayRow {
@@ -45,6 +46,8 @@ export default function HolidayPage() {
   const [year, setYear] = useState<number>(thisYear)
   const [month, setMonth] = useState<Dayjs>(dayjs())
   const [open, setOpen] = useState(false)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(PAGE_SIZE)
   const [form] = Form.useForm()
 
   const canView = can('system:holiday')
@@ -171,7 +174,22 @@ export default function HolidayPage() {
 
       <div style={{ marginTop: 24 }}>
         <Typography.Title level={5}>列表</Typography.Title>
-        <Table rowKey="id" columns={columns} dataSource={data ?? []} loading={isLoading} pagination={false} size="small" />
+        <Table
+          rowKey="id"
+          columns={columns}
+          dataSource={data ?? []}
+          loading={isLoading}
+          pagination={tablePagination({
+            current: page,
+            pageSize,
+            total: data?.length ?? 0,
+            onChange: (p, ps) => {
+              setPage(p)
+              setPageSize(ps)
+            },
+            unit: '天',
+          })}
+        />
       </div>
 
       <Modal
