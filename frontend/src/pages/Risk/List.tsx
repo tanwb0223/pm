@@ -19,6 +19,7 @@ import {
 import { PlusOutlined } from '@ant-design/icons'
 import dayjs, { type Dayjs } from 'dayjs'
 
+import DataTable from '@/components/DataTable'
 import PageHeader from '@/components/PageHeader'
 import { RiskLevelTag } from '@/components/Tags'
 import { majorApi, riskApi, subApi, systemApi } from '@/api'
@@ -292,7 +293,7 @@ export default function RiskListPage() {
         </Checkbox>
       </Space>
 
-      <Table
+      <DataTable
         rowKey="id"
         size="small"
         loading={isLoading}

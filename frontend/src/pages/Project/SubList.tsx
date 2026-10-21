@@ -18,6 +18,7 @@ import {
 import type { ColumnsType } from 'antd/es/table'
 import dayjs, { type Dayjs } from 'dayjs'
 
+import DataTable from '@/components/DataTable'
 import PageHeader from '@/components/PageHeader'
 import { SubStatusTag } from '@/components/Tags'
 import { majorApi, subApi, systemApi } from '@/api'
@@ -358,7 +359,7 @@ export default function SubListPage() {
         />
       </Space>
 
-      <Table<Sub>
+      <DataTable<Sub>
         rowKey="id"
         loading={isLoading}
         columns={columns}
@@ -371,7 +372,7 @@ export default function SubListPage() {
           showTotal: (t) => `共 ${t} 条`,
           onChange: (p) => setPage(p),
         }}
-        scroll={{ x: 1300 }}
+        minTableWidth={1300}
       />
 
       {/* 新建弹窗 */}

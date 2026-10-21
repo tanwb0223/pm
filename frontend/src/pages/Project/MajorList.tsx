@@ -19,6 +19,7 @@ import {
 import type { ColumnsType } from 'antd/es/table'
 import dayjs, { type Dayjs } from 'dayjs'
 
+import DataTable from '@/components/DataTable'
 import PageHeader from '@/components/PageHeader'
 import { MajorStatusTag } from '@/components/Tags'
 import { exportApi, majorApi, systemApi } from '@/api'
@@ -320,7 +321,7 @@ export default function MajorListPage() {
         />
       </Space>
 
-      <Table<Major>
+      <DataTable<Major>
         rowKey="id"
         loading={isLoading}
         columns={columns}
@@ -333,7 +334,7 @@ export default function MajorListPage() {
           showTotal: (t) => `共 ${t} 条`,
           onChange: (p) => setPage(p),
         }}
-        scroll={{ x: 1100 }}
+        minTableWidth={1100}
       />
 
       {/* 新建 / 编辑 */}

@@ -568,3 +568,109 @@ body {
     font-size: 24px;
   }
 }
+
+
+/* ==========================================================================
+   表格页：表头固定 + 表体滚动 + 分页固定底部
+   ========================================================================== */
+
+/* 页面容器：占满内容区，flex 纵向布局 */
+.page-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+/* 页头、筛选区等不参与伸缩 */
+.page-container > .page-header,
+.page-container > .ant-space,
+.page-container > .ant-alert {
+  flex-shrink: 0;
+}
+
+/* 表格填充容器：占据剩余空间 */
+.data-table-fill {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.data-table-fill > .ant-table-wrapper {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.data-table-fill .ant-spin-nested-loading,
+.data-table-fill .ant-spin-container {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.data-table-fill .ant-table {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* 固定表头样式 */
+.data-table-fill .ant-table-header {
+  flex-shrink: 0;
+  border-radius: 0;
+}
+
+.data-table-fill .ant-table-body {
+  overflow-y: auto !important;
+}
+
+/* 分页固定底部 */
+.data-table-fill .ant-table-pagination.ant-pagination {
+  flex-shrink: 0;
+  margin: 12px 0 0 !important;
+  padding: 12px 16px;
+  background: #fff;
+  border-top: 1px solid var(--border-light);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+
+/* 表格在卡片内时，去掉卡片内边距让表头贴合 */
+.page-container > .ant-card:has(.data-table-fill),
+.page-container > .ant-card .data-table-fill {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.ant-card:has(> .ant-card-body > .data-table-fill) {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.ant-card:has(> .ant-card-body > .data-table-fill) > .ant-card-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+
+/* 卡片 + 标题时的表格区域 */
+.ant-card:has(.data-table-fill) > .ant-card-body {
+  padding-bottom: 0;
+}
+
+/* 表体滚动条细一点 */
+.data-table-fill .ant-table-body::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+/* 固定列阴影优化 */
+.data-table-fill .ant-table-cell-fix-left-last::after,
+.data-table-fill .ant-table-cell-fix-right-first::after {
+  box-shadow: none;
+}

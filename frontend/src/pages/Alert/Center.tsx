@@ -18,6 +18,7 @@ import {
 import type { ColumnsType } from 'antd/es/table'
 import { ScanOutlined } from '@ant-design/icons'
 
+import DataTable from '@/components/DataTable'
 import PageHeader from '@/components/PageHeader'
 import { AlertLevelTag, AlertStatusTag, AlertTypeTag } from '@/components/Tags'
 import { alertApi, systemApi } from '@/api'
@@ -364,12 +365,12 @@ export default function AlertCenterPage() {
         </Checkbox>
       </Space>
 
-      <Table<Alert>
+      <DataTable<Alert>
         rowKey="id"
         loading={isFetching}
         columns={columns}
         dataSource={data?.items ?? []}
-        scroll={{ x: 1200 }}
+        minTableWidth={1200}
         pagination={{
           current: page,
           pageSize: PAGE_SIZE,

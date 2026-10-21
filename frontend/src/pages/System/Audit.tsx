@@ -4,6 +4,7 @@ import { Button, Input, Space, Table, Tag, Tooltip, Result, Typography } from 'a
 import { SearchOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 
+import DataTable from '@/components/DataTable'
 import PageHeader from '@/components/PageHeader'
 import { systemApi } from '@/api'
 import { fmtDateTime } from '@/lib/constants'
@@ -164,7 +165,7 @@ export default function AuditPage() {
         />
       </Space>
 
-      <Table<AuditRow>
+      <DataTable<AuditRow>
         rowKey="id"
         columns={columns}
         dataSource={(data?.items ?? []) as unknown as AuditRow[]}

@@ -20,6 +20,7 @@ import {
 import { ExportOutlined, EyeOutlined } from '@ant-design/icons'
 import type { Dayjs } from 'dayjs'
 
+import DataTable from '@/components/DataTable'
 import PageHeader from '@/components/PageHeader'
 import { ReportStatusTag } from '@/components/Tags'
 import { exportApi, reportApi } from '@/api'
@@ -231,7 +232,7 @@ export default function ReportListPage() {
         />
       </Space>
 
-      <Table
+      <DataTable
         rowKey="id"
         size="small"
         loading={isLoading}

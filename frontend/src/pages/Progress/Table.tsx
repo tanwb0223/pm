@@ -22,6 +22,7 @@ import {
 import type { ColumnsType } from 'antd/es/table'
 import { DownloadOutlined } from '@ant-design/icons'
 
+import DataTable from '@/components/DataTable'
 import PageHeader from '@/components/PageHeader'
 import AttachmentPanel from '@/components/AttachmentPanel'
 import SubTrendDrawer from '@/components/SubTrendDrawer'
@@ -374,7 +375,7 @@ export default function ProgressTablePage() {
         />
       </Space>
 
-      <Table<ProgressRow>
+      <DataTable<ProgressRow>
         className="progress-table"
         rowKey="id"
         loading={isFetching}

@@ -16,6 +16,7 @@ import {
 import { PlusOutlined, SearchOutlined, UploadOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 
+import DataTable from '@/components/DataTable'
 import PageHeader from '@/components/PageHeader'
 import ImportModal from '@/components/ImportModal'
 import { systemApi, collegeApi } from '@/api'
@@ -250,7 +251,7 @@ function UserPageInner() {
         />
       </Space>
 
-      <Table<UserItem>
+      <DataTable<UserItem>
         rowKey="id"
         columns={columns}
         dataSource={data?.items ?? []}
