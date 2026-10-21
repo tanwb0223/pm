@@ -62,10 +62,6 @@ export const authAdminApi = {
     put<Record<string, unknown>>(`/auth/admin/providers/${kind}`, data),
   test: (kind: string) =>
     post<{ ok: boolean; detail: string }>(`/auth/admin/providers/${kind}/test`),
-  myIdentities: () =>
-    get<{ provider: string; display_name: string; subject: string; last_login_at: string | null }[]>(
-      '/auth/me/identities',
-    ),
 }
 
 // ================================================================ 学院

@@ -148,8 +148,10 @@ class AlertService:
         # 接收人兜底链
         receiver = self._resolve_receiver(cand)
 
+        # 处置时限：优先读参数（alert.red/orange.deadline_days），未配置时用默认值。
+        # 原来这里是 DEADLINE_DAYS 硬编码，导致参数配置页改这两个值不生效。
         deadline = None
-        days = DEADLINE_DAYS.get(cand.level, 0)
+        days = self._deadline_days(cand.level)
         if days:
             deadline = datetime.now(UTC) + timedelta(days=days)
 
@@ -179,6 +181,13 @@ class AlertService:
                 self._notify(alert, uid, "INNER", cand)
 
         return "created"
+
+    def _deadline_days(self, level: str) -> int:
+        """某等级预警的处置时限（天）：参数优先，缺省回落到 DEADLINE_DAYS"""
+        key = {"RED": "alert.red.deadline_days", "ORANGE": "alert.orange.deadline_days"}.get(level)
+        if key:
+            return self.config.get_int(key, DEADLINE_DAYS.get(level, 0))
+        return DEADLINE_DAYS.get(level, 0)
 
     def _resolve_receiver(self, cand: AlertCandidate) -> list[int]:
         """责任空缺兜底：子项目无负责人 → 学院负责人 → 大项目负责人 → 归口管理员"""

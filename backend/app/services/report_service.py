@@ -58,26 +58,43 @@ class ReportService:
         raise BusinessError(f"未知报表类型：{rtype}")
 
     def deadline_of(self, rtype: str, period_start: date) -> datetime:
-        """该期报表的提交截止时间"""
+        """该期报表的提交截止时间
+
+        周报/月报的截止星期与时刻都读参数，可在「参数配置」页调整：
+        - report.weekly.deadline_weekday / report.weekly.deadline_hour
+        - report.monthly.deadline_workday / report.monthly.deadline_hour
+        原来这里是硬编码（次周一 12:00、次月第 3 个工作日 18:00），
+        导致这 4 个参数改了不生效。
+        """
         if rtype == "DAILY":
             return datetime.combine(period_start + timedelta(days=1), time(0, 0), tzinfo=UTC)
         if rtype == "WEEKLY":
-            # 次周一 12:00
+            # 默认次周一 12:00；weekday 1=周一 ... 7=周日
+            weekday = self.config.get_int("report.weekly.deadline_weekday", 1)
+            hour = self.config.get_int("report.weekly.deadline_hour", 12)
             week_end = period_start + timedelta(days=6)
-            next_monday = week_end + timedelta(days=1)
-            return datetime.combine(next_monday, time(12, 0), tzinfo=UTC)
+            # 从周结束次日起找目标星期
+            target = max(1, min(7, weekday))
+            d = week_end + timedelta(days=1)
+            for _ in range(7):
+                if d.isoweekday() == target:
+                    break
+                d += timedelta(days=1)
+            return datetime.combine(d, time(max(0, min(23, hour)), 0), tzinfo=UTC)
         if rtype == "MONTHLY":
-            # 次月第 3 个工作日 18:00
+            # 默认次月第 3 个工作日 18:00
+            workday = max(1, self.config.get_int("report.monthly.deadline_workday", 3))
+            hour = max(0, min(23, self.config.get_int("report.monthly.deadline_hour", 18)))
             nxt = self.month_end(period_start) + timedelta(days=1)
             counted = 0
             d = nxt
-            while counted < 3:
+            while True:
                 if d.weekday() < 5 and not self.cal.is_free_day(d):
                     counted += 1
-                    if counted == 3:
+                    if counted >= workday:
                         break
                 d += timedelta(days=1)
-            return datetime.combine(d, time(18, 0), tzinfo=UTC)
+            return datetime.combine(d, time(hour, 0), tzinfo=UTC)
         raise BusinessError(f"未知报表类型：{rtype}")
 
     def is_due(self, rtype: str, sub: ProjSub, period_start: date, day: date) -> bool:

@@ -143,17 +143,17 @@ export default function AppLayout() {
     }
     if (can('alert:list')) {
       items.push({
-        key: '/alert/center',
+        key: 'alert',
         icon: <AlertOutlined />,
         label: (
           <Space size={6}>
-            预警中心
+            预警管理
             {todo && todo.pending_alerts > 0 && (
               <Badge count={todo.pending_alerts} size="small" color="#ef4444" />
             )}
           </Space>
         ),
-      })
+      } as never)
     }
     if (can('report:fill')) {
       items.push({ key: 'report', icon: <FileTextOutlined />, label: '报表管理' } as never)
@@ -171,6 +171,10 @@ export default function AppLayout() {
     project: [
       { key: '/project/majors', label: '大项目' },
       { key: '/project/subs', label: '子项目' },
+    ],
+    alert: [
+      { key: '/alert/center', label: '预警中心', icon: <AlertOutlined /> },
+      { key: '/alert/stats', label: '预警统计', icon: <BarChartOutlined /> },
     ],
     report: [
       { key: '/report/fill', label: '报表填报', icon: <EditOutlined /> },
@@ -266,7 +270,7 @@ export default function AppLayout() {
           <Menu
             mode="inline"
             selectedKeys={[selectedKey]}
-            defaultOpenKeys={['project', 'report', 'system']}
+            defaultOpenKeys={['project', 'alert', 'report', 'system']}
             items={finalItems as never}
             onClick={({ key }) => {
               if (key.startsWith('/')) navigate(key)
