@@ -226,6 +226,8 @@ export const reportApi = {
       { sub_id, week_start },
     ),
   pending: () => get<PendingReport[]>('/reports/pending'),
+  /** 填报选项：当前启用的报表类型（日报受 report.daily.enabled 开关控制） */
+  options: () => get<{ types: string[]; daily_enabled: boolean }>('/reports/options'),
   timeliness: (params: { start: string; end: string; type?: string; major_id?: number }) =>
     get<{
       should_submit: number

@@ -8,6 +8,7 @@ import {
   BarChartOutlined,
   CalendarOutlined,
   DashboardOutlined,
+  EditOutlined,
   DatabaseOutlined,
   DownOutlined,
   FileTextOutlined,
@@ -155,7 +156,7 @@ export default function AppLayout() {
       })
     }
     if (can('report:fill')) {
-      items.push({ key: '/report/list', icon: <FileTextOutlined />, label: '报表管理' })
+      items.push({ key: 'report', icon: <FileTextOutlined />, label: '报表管理' } as never)
     }
     if (can('risk:list')) {
       items.push({ key: '/risk/list', icon: <WarningOutlined />, label: '风险登记' })
@@ -170,6 +171,11 @@ export default function AppLayout() {
     project: [
       { key: '/project/majors', label: '大项目' },
       { key: '/project/subs', label: '子项目' },
+    ],
+    report: [
+      { key: '/report/fill', label: '报表填报', icon: <EditOutlined /> },
+      { key: '/report/list', label: '报表列表', icon: <FileTextOutlined /> },
+      { key: '/report/timeliness', label: '及时率', icon: <BarChartOutlined /> },
     ],
     system: systemChildren,
   }
@@ -190,6 +196,7 @@ export default function AppLayout() {
     if (p.startsWith('/alert/stats')) return '/alert/stats'
     if (p.startsWith('/report/list')) return '/report/list'
     if (p.startsWith('/report/fill')) return '/report/fill'
+    if (p.startsWith('/report/timeliness')) return '/report/timeliness'
     if (p.startsWith('/risk')) return '/risk/list'
     if (p.startsWith('/system')) return p
     return p
@@ -259,7 +266,7 @@ export default function AppLayout() {
           <Menu
             mode="inline"
             selectedKeys={[selectedKey]}
-            defaultOpenKeys={['project', 'system']}
+            defaultOpenKeys={['project', 'report', 'system']}
             items={finalItems as never}
             onClick={({ key }) => {
               if (key.startsWith('/')) navigate(key)

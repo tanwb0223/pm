@@ -185,6 +185,20 @@ def timeliness_detail(
     return page(rows, total, page_no, page_size)
 
 
+# ---------------------------------------------------------------- 填报选项
+@router.get("/reports/options", summary="填报选项（当前启用的报表类型）")
+def report_options(db: Session = Depends(get_db)):
+    """供填报页使用：哪些报表类型是启用的
+
+    日报由参数 report.daily.enabled 控制（默认关闭）。这个接口只读、登录即可访问，
+    避免普通填报人为了读一个开关而去申请 system:config 权限。
+    """
+    svc = ReportService(db)
+    daily_enabled = svc.config.get_bool("report.daily.enabled", False)
+    types = (["DAILY"] if daily_enabled else []) + ["WEEKLY", "MONTHLY"]
+    return ok({"types": types, "daily_enabled": daily_enabled})
+
+
 # ---------------------------------------------------------------- 周期辅助
 @router.get("/reports/period", summary="查询某类型某日所属周期与截止时间")
 def period_info(

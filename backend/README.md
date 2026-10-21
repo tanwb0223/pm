@@ -539,6 +539,7 @@ PENDING ──认领──► CLAIMED ──关闭──► CLOSED
 | GET | `/api/reports/pending` | 待填清单 | 登录 |
 | GET | `/api/reports/timeliness` | 报表及时率 | 登录 |
 | GET | `/api/reports/period` | 查询周期与截止时间 | 登录 |
+| GET | `/api/reports/options` | 填报选项（启用哪些报表类型） | 登录 |
 
 ### 一张表存三种报表
 

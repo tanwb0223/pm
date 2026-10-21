@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Alert,
@@ -27,11 +27,11 @@ const { TextArea } = Input
 
 type ReportType = 'DAILY' | 'WEEKLY' | 'MONTHLY'
 
-const TYPE_OPTIONS: { value: ReportType; label: string }[] = [
-  { value: 'DAILY', label: '日报' },
-  { value: 'WEEKLY', label: '周报' },
-  { value: 'MONTHLY', label: '月报' },
-]
+const TYPE_LABEL: Record<ReportType, string> = {
+  DAILY: '日报',
+  WEEKLY: '周报',
+  MONTHLY: '月报',
+}
 
 /** 从待填清单带入的补填周期 */
 interface PickedPeriod {
@@ -64,6 +64,27 @@ export default function ReportFillPage() {
   const [subId, setSubId] = useState<number | null>(null)
   const [syncProgress, setSyncProgress] = useState(false)
   const [picked, setPicked] = useState<PickedPeriod | null>(null)
+
+  // 填报选项：日报受 report.daily.enabled 控制，关闭时不出现在类型选择里
+  const { data: options } = useQuery({
+    queryKey: ['report-options'],
+    queryFn: reportApi.options,
+    staleTime: 60_000,
+  })
+  const enabledTypes = useMemo(
+    () => (options?.types ?? ['WEEKLY', 'MONTHLY']) as ReportType[],
+    [options],
+  )
+  const typeOptions = enabledTypes.map((t) => ({ value: t, label: TYPE_LABEL[t] }))
+
+  // 兜底：若当前选中的类型已被管理员关闭（如刚关掉日报），自动回落到第一个可用类型
+  useEffect(() => {
+    if (options && !enabledTypes.includes(type)) {
+      const fallback = enabledTypes[0] ?? 'WEEKLY'
+      setType(fallback)
+      form.setFieldsValue({ type: fallback })
+    }
+  }, [options, enabledTypes, type, form])
 
   // 待填清单
   const { data: pending = [], isLoading: pendingLoading } = useQuery({
@@ -239,7 +260,7 @@ export default function ReportFillPage() {
               <Form.Item name="type" label="报表类型" initialValue="WEEKLY">
                 <Radio.Group
                   optionType="button"
-                  options={TYPE_OPTIONS}
+                  options={typeOptions}
                   onChange={(e) => setType(e.target.value as ReportType)}
                 />
               </Form.Item>
