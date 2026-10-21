@@ -16,6 +16,7 @@ interface Props<T> extends TableProps<T> {
  * 1. 表头固定（Ant Design 的 scroll.y 机制）
  * 2. 表体滚动，只滚动内容区
  * 3. 分页固定在容器底部
+ * 4. 数据不足一页时，表体仍撑满可用高度（不留白）
  *
  * 用法：替换 `<Table>` 为 `<DataTable>`，把 `scroll={{ x: 1100 }}`
  * 改成 `minTableWidth={1100}`。父容器需要有确定高度
@@ -39,17 +40,17 @@ export default function DataTable<T extends object>({
       const total = el.clientHeight
       if (total <= 0) return
 
-      // 表头高度（scroll.y 模式下有独立 header，否则是 thead）
+      // 表头高度（scroll.y 模式下是独立 header）
       const headerEl =
         el.querySelector<HTMLElement>('.ant-table-header') ??
         el.querySelector<HTMLElement>('.ant-table-thead')
       const headerH = headerEl?.offsetHeight ?? 40
 
-      // 分页高度（含上下 margin）
+      // 分页高度（现在 margin 为 0，直接用 offsetHeight）
       const pagEl = el.querySelector<HTMLElement>('.ant-table-pagination')
-      const pagH = pagEl ? pagEl.offsetHeight + 16 : 0
+      const pagH = pagEl ? pagEl.offsetHeight : 0
 
-      const h = Math.max(total - headerH - pagH - 2, minBodyHeight)
+      const h = Math.max(total - headerH - pagH, minBodyHeight)
       setBodyHeight((prev) => (Math.abs(prev - h) > 1 ? h : prev))
     }
 

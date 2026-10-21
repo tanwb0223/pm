@@ -582,6 +582,11 @@ body {
   min-height: 0;
 }
 
+/* 含表格的页面：底部不留白，分页条直接贴底 */
+.page-container:has(.data-table-fill) {
+  padding-bottom: 0;
+}
+
 /* 页头、筛选区等不参与伸缩 */
 .page-container > .page-header,
 .page-container > .ant-space,
@@ -612,7 +617,23 @@ body {
   flex-direction: column;
 }
 
+/* 表格本体不撑满，让表体去撑满 */
 .data-table-fill .ant-table {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.data-table-fill .ant-table-container {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.data-table-fill .ant-table-content,
+.data-table-fill .ant-table-body {
   flex: 1 1 auto;
   min-height: 0;
 }
@@ -630,11 +651,31 @@ body {
 /* 分页固定底部 */
 .data-table-fill .ant-table-pagination.ant-pagination {
   flex-shrink: 0;
-  margin: 12px 0 0 !important;
-  padding: 12px 16px;
+  margin: 0 !important;
+  padding: 8px 20px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
   background: #fff;
   border-top: 1px solid var(--border-light);
   border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+
+/* 分页项更紧凑 */
+.data-table-fill .ant-table-pagination .ant-pagination-item,
+.data-table-fill .ant-table-pagination .ant-pagination-prev,
+.data-table-fill .ant-table-pagination .ant-pagination-next {
+  min-width: 28px;
+  height: 28px;
+  line-height: 26px;
+  margin-inline-end: 6px;
+}
+
+.data-table-fill .ant-table-pagination .ant-pagination-total-text {
+  margin-inline-end: 12px;
+  font-size: 13px;
+  color: var(--text-secondary);
 }
 
 /* 表格在卡片内时，去掉卡片内边距让表头贴合 */
