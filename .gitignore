@@ -117,3 +117,6 @@ pm-offline-*.tar.gz
 frontend/package-lock.json
 frontend/yarn.lock
 frontend/.pnpm-store
+
+# 工具临时目录
+.workbuddy/
