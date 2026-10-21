@@ -213,6 +213,9 @@ def import_users(
                 phone=item["phone"],
                 email=item["email"],
                 password_hash=hash_password(default_password),
+                # 导入用的是全校统一的初始密码，必须强制首次登录后改掉，
+                # 否则等于全校共用一个口令。
+                must_change_password=True,
                 status="ACTIVE",
             )
             db.add(user)

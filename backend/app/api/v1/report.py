@@ -138,11 +138,82 @@ def weekly_draft(
 @router.get("/reports/pending", summary="待填报表清单")
 def pending_reports(
     day: date | None = None,
+    include_upcoming: bool = Query(
+        default=True, description="是否包含尚未到截止、但已进入填报窗口的报表"
+    ),
+    upcoming_days: int = Query(default=3, ge=0, le=30, description="提前提醒天数"),
+    user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """返回两类：OVERDUE 已逾期、UPCOMING 临近截止
+
+    早期只返回已逾期的，教师在截止前看不到提醒，容易拖到逾期。
+    """
+    svc = ReportService(db)
+    return ok(svc.pending_list(user, day, include_upcoming, upcoming_days))
+
+
+# ---------------------------------------------------------------- 补填放行
+class GraceIn(BaseModel):
+    sub_id: int
+    type: str = Field(pattern="^(DAILY|WEEKLY|MONTHLY)$")
+    period_start: date | None = Field(
+        default=None, description="为空表示放行该类型所有历史周期"
+    )
+    reason: str = Field(min_length=1, max_length=500, description="开启理由")
+    days: int = Field(default=7, ge=1, le=90, description="放行有效天数")
+
+
+@router.get("/reports/graces", summary="补填放行记录")
+def list_graces(
+    sub_id: int | None = None,
+    user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return ok(ReportService(db).list_graces(user, sub_id))
+
+
+@router.post(
+    "/reports/graces",
+    summary="开启逾期补填",
+    dependencies=[Depends(require_perm("report:grant"))],
+)
+def grant_grace(
+    body: GraceIn,
+    user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """文档 4.3：月报超过 3 天，需学院负责人开启才能补填
+
+    放行有有效期（默认 7 天），到期自动失效。
+    """
+    svc = ReportService(db)
+    result = svc.grant_grace(
+        body.sub_id,
+        body.type,
+        period_start=body.period_start,
+        reason=body.reason,
+        days=body.days,
+        operator=user,
+    )
+    db.commit()
+    return ok(result)
+
+
+@router.delete(
+    "/reports/graces/{grace_id}",
+    summary="撤销补填放行",
+    dependencies=[Depends(require_perm("report:grant"))],
+)
+def revoke_grace(
+    grace_id: int,
     user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     svc = ReportService(db)
-    return ok(svc.pending_list(user, day))
+    svc.revoke_grace(grace_id, user)
+    db.commit()
+    return ok()
 
 
 # ---------------------------------------------------------------- 及时率

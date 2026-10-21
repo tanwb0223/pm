@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import BusinessError, NotFoundError
 from app.core.scope import apply_scope, assert_sub_access
 from app.models.project import ProgRecord, ProjSub
-from app.models.report import Report
+from app.models.report import Report, ReportGrace
 from app.services.calendar_service import CalendarService
 from app.services.config_service import ConfigService
 
@@ -152,13 +152,15 @@ class ReportService:
 
         # 截止 + 补填期校验：超过「截止时间 + report.correct_days 天」不再接收。
         # 早期不校验，既能补交很久以前的报表，也能提交未来周期。
+        # 超期后若学院负责人开了补填（report_grace），仍可提交。
         deadline = self.deadline_of(rtype, p_start)
         grace_days = max(0, self.config.get_int("report.correct_days", 3))
         if datetime.now(UTC) > deadline + timedelta(days=grace_days):
-            raise BusinessError(
-                f"已超过补填期（截止 {deadline.strftime('%Y-%m-%d %H:%M')}，"
-                f"可补填 {grace_days} 天），如需提交请联系学院负责人"
-            )
+            if not self._has_grace(sub_id, rtype, p_start):
+                raise BusinessError(
+                    f"已超过补填期（截止 {deadline.strftime('%Y-%m-%d %H:%M')}，"
+                    f"可补填 {grace_days} 天），如需提交请联系学院负责人开启补填"
+                )
 
         existing = self.db.scalar(
             select(Report).where(
@@ -222,6 +224,148 @@ class ReportService:
             raise BusinessError(
                 f"报表已超过 {days} 天更正期，需学院负责人开启修改权限"
             )
+
+    # ============================================================ 补填放行
+    def _has_grace(self, sub_id: int, rtype: str, period_start: date) -> bool:
+        """该周期是否已被放行补填（未撤销且未过期）"""
+        from app.models.report import ReportGrace
+
+        today = date.today()
+        stmt = select(ReportGrace).where(
+            ReportGrace.sub_id == sub_id,
+            ReportGrace.type == rtype,
+            ReportGrace.revoked_at.is_(None),
+            ReportGrace.expires_on >= today,
+            # period_start 为空表示放行该类型所有历史周期
+            (ReportGrace.period_start.is_(None))
+            | (ReportGrace.period_start == period_start),
+        )
+        return self.db.scalar(stmt) is not None
+
+    def grant_grace(
+        self,
+        sub_id: int,
+        rtype: str,
+        *,
+        period_start: date | None,
+        reason: str,
+        days: int,
+        operator: Any,
+    ) -> dict:
+        """开启逾期补填（文档 4.3：月报超 3 天需学院负责人开）
+
+        Args:
+            period_start: 为空表示放行该子项目该类型的所有历史周期
+            days: 放行有效天数
+        """
+        from app.models.report import ReportGrace
+
+        sub = self.db.get(ProjSub, sub_id)
+        if sub is None or sub.deleted_at is not None:
+            raise NotFoundError("子项目不存在")
+        assert_sub_access(operator, sub)
+
+        if rtype not in REPORT_TYPES:
+            raise BusinessError(f"未知报表类型：{rtype}")
+        if not reason or not reason.strip():
+            raise BusinessError("开启补填必须填写理由")
+        days = max(1, min(90, days))
+
+        # 同一范围已有有效放行则不重复创建
+        today = date.today()
+        exist = self.db.scalar(
+            select(ReportGrace).where(
+                ReportGrace.sub_id == sub_id,
+                ReportGrace.type == rtype,
+                ReportGrace.period_start.is_(None)
+                if period_start is None
+                else ReportGrace.period_start == period_start,
+                ReportGrace.revoked_at.is_(None),
+                ReportGrace.expires_on >= today,
+            )
+        )
+        if exist is not None:
+            raise BusinessError("该周期已有生效中的补填放行")
+
+        row = ReportGrace(
+            sub_id=sub_id,
+            type=rtype,
+            period_start=period_start,
+            reason=reason.strip(),
+            granted_by=operator.id,
+            expires_on=today + timedelta(days=days),
+        )
+        self.db.add(row)
+        self.db.flush()
+        return {
+            "id": row.id,
+            "sub_id": sub_id,
+            "sub_name": sub.name,
+            "type": rtype,
+            "period_start": period_start,
+            "expires_on": row.expires_on,
+            "days": days,
+        }
+
+    def revoke_grace(self, grace_id: int, operator: Any) -> None:
+        """撤销补填放行"""
+        from app.models.report import ReportGrace
+
+        row = self.db.get(ReportGrace, grace_id)
+        if row is None:
+            raise NotFoundError("放行记录不存在")
+        if row.revoked_at is not None:
+            raise BusinessError("该放行已撤销")
+        sub = self.db.get(ProjSub, row.sub_id)
+        if sub is not None:
+            assert_sub_access(operator, sub)
+        row.revoked_at = datetime.now(UTC)
+        row.revoked_by = operator.id
+        self.db.flush()
+
+    def list_graces(self, user: Any, sub_id: int | None = None) -> list[dict]:
+        """补填放行记录（生效中的排前面）"""
+        from app.models.report import ReportGrace
+        from app.models.system import SysUser
+
+        stmt = select(ReportGrace).order_by(ReportGrace.id.desc())
+        if sub_id:
+            stmt = stmt.where(ReportGrace.sub_id == sub_id)
+
+        # 数据范围：只列自己有权访问的子项目
+        subs_stmt = select(ProjSub.id).where(ProjSub.deleted_at.is_(None))
+        subs_stmt = apply_scope(subs_stmt, user, ProjSub)
+        visible = set(self.db.scalars(subs_stmt))
+        sub_names = {
+            s.id: s.name
+            for s in self.db.scalars(select(ProjSub).where(ProjSub.deleted_at.is_(None)))
+        }
+        user_names = {u.id: u.name for u in self.db.scalars(select(SysUser))}
+
+        today = date.today()
+        out = []
+        for r in self.db.scalars(stmt):
+            if r.sub_id not in visible:
+                continue
+            active = r.revoked_at is None and r.expires_on >= today
+            out.append(
+                {
+                    "id": r.id,
+                    "sub_id": r.sub_id,
+                    "sub_name": sub_names.get(r.sub_id, f"#{r.sub_id}"),
+                    "type": r.type,
+                    "type_label": TYPE_LABEL.get(r.type, r.type),
+                    "period_start": r.period_start,
+                    "reason": r.reason,
+                    "granted_by": r.granted_by,
+                    "granted_by_name": user_names.get(r.granted_by),
+                    "granted_at": r.granted_at,
+                    "expires_on": r.expires_on,
+                    "is_active": active,
+                }
+            )
+        out.sort(key=lambda x: (not x["is_active"], x["expires_on"]))
+        return out
 
     # ============================================================ 作废
     def void(self, report_id: int, operator: Any, reason: str) -> Report:
@@ -372,8 +516,27 @@ class ReportService:
         return rep
 
     # ============================================================ 待填清单
-    def pending_list(self, user: Any, day: date | None = None) -> list[dict]:
-        """我该填但还没填的报表"""
+    def pending_list(
+        self,
+        user: Any,
+        day: date | None = None,
+        include_upcoming: bool = True,
+        upcoming_days: int = 3,
+    ) -> list[dict]:
+        """我该填但还没填的报表
+
+        两类都返回，用 status 区分：
+
+        - OVERDUE    已过截止时间仍未提交（需要催）
+        - UPCOMING   已进入填报窗口、还没到截止（提前提醒，避免逾期）
+
+        早期实现只返回 OVERDUE，教师在截止前完全看不到提醒，
+        等发现时已经逾期了——需求 4.3 的本意是「该填了就提醒」。
+
+        Args:
+            include_upcoming: 是否包含尚未到截止的（默认包含）
+            upcoming_days: 提前多少天开始提醒（默认 3 天）
+        """
         day = day or date.today()
         stmt = select(ProjSub).where(
             ProjSub.deleted_at.is_(None), ProjSub.status == "IN_PROGRESS"
@@ -386,15 +549,22 @@ class ReportService:
         if daily_enabled:
             types.insert(0, "DAILY")
 
+        now = datetime.now(UTC)
+        upcoming_cutoff = now + timedelta(days=max(0, upcoming_days))
         out = []
         for sub in subs:
             for rtype in types:
                 p_start, p_end = self.period_of(rtype, day)
                 if not self.is_due(rtype, sub, p_start, day):
                     continue
+
                 deadline = self.deadline_of(rtype, p_start)
-                if datetime.now(UTC) < deadline:
-                    continue
+                is_overdue = now >= deadline
+                if not is_overdue:
+                    # 未到截止：只在 include_upcoming 且已进入提醒窗口时返回
+                    if not include_upcoming or deadline > upcoming_cutoff:
+                        continue
+
                 exists = self.db.scalar(
                     select(Report).where(
                         Report.sub_id == sub.id,
@@ -405,6 +575,7 @@ class ReportService:
                 )
                 if exists:
                     continue
+
                 out.append(
                     {
                         "sub_id": sub.id,
@@ -414,9 +585,16 @@ class ReportService:
                         "period_start": p_start,
                         "period_end": p_end,
                         "deadline": deadline,
-                        "overdue_days": (datetime.now(UTC) - deadline).days,
+                        # OVERDUE 已逾期 / UPCOMING 临近截止
+                        "status": "OVERDUE" if is_overdue else "UPCOMING",
+                        "overdue_days": (now - deadline).days if is_overdue else 0,
+                        # 未逾期时为距截止还剩几天，便于前端显示「还剩 N 天」
+                        "days_left": 0 if is_overdue else (deadline - now).days,
                     }
                 )
+
+        # 逾期在前，同状态内按截止时间升序（最急的排最前）
+        out.sort(key=lambda x: (x["status"] != "OVERDUE", x["deadline"]))
         return out
 
     # ============================================================ 及时率

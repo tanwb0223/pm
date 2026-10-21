@@ -132,6 +132,8 @@ export default function ProgressTablePage() {
   const can = useCan()
   // 行内「填报」需要 progress:update；无权限时只保留只读的「趋势」
   const canUpdate = can('progress:update')
+  // 行内「催办」需要 progress:urge
+  const canUrge = can('progress:urge')
 
   const [filters, setFilters] = useState<Filters>({ sort: 'deviation', only_abnormal: false })
   const [page, setPage] = useState(1)
@@ -181,6 +183,24 @@ export default function ProgressTablePage() {
   const openTrend = (sub: ProgressRow) => {
     setTrendSub(sub)
   }
+
+  // 行内催办（文档 3.2(5)）：站内必发，负责人有邮箱时同时发邮件
+  const [urgeTarget, setUrgeTarget] = useState<number | null>(null)
+  const urgeMut = useMutation({
+    mutationFn: (subId: number) => {
+      setUrgeTarget(subId)
+      return progressApi.urge(subId)
+    },
+    onSuccess: (res) => {
+      const via = res.channels.includes('EMAIL') ? '站内消息 + 邮件' : '站内消息'
+      message.success(`已催办 ${res.owner_name ?? '负责人'}（${via}）`)
+    },
+    onError: (e: unknown) => {
+      const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      message.warning(msg || '催办失败')
+    },
+    onSettled: () => setUrgeTarget(null),
+  })
 
   const fillMutation = useMutation({
     mutationFn: (values: {
@@ -291,7 +311,7 @@ export default function ProgressTablePage() {
     },
     {
       title: '操作',
-      width: 130,
+      width: 190,
       render: (_, r) => (
         <Space size={0}>
           {canUpdate && (
@@ -299,6 +319,18 @@ export default function ProgressTablePage() {
               填报
             </Button>
           )}
+          {canUrge && r.owner_id ? (
+            <Tooltip title="通知负责人尽快更新进度（24 小时内不重复）">
+              <Button
+                type="link"
+                size="small"
+                loading={urgeMut.isPending && urgeTarget === r.id}
+                onClick={() => urgeMut.mutate(r.id)}
+              >
+                催办
+              </Button>
+            </Tooltip>
+          ) : null}
           <Button type="link" size="small" onClick={() => openTrend(r)}>
             趋势
           </Button>

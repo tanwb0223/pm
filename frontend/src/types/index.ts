@@ -18,6 +18,8 @@ export interface LoginResult {
   access_token: string
   token_type: string
   user?: { id: number; name: string; staff_no?: string }
+  /** 首次登录或被管理员重置后为 true，前端强制弹改密框 */
+  must_change_password?: boolean
 }
 
 export interface AuthProviderInfo {
@@ -35,6 +37,10 @@ export interface MeInfo {
   roles: string[]
   permissions: string[]
   scopes: { type: string; id: number | null }[]
+  /** 是否已设置本地密码（纯第三方登录的账号为 false） */
+  has_password?: boolean
+  /** 首次登录或被管理员重置后为 true，前端强制弹改密框 */
+  must_change_password?: boolean
 }
 
 // ---------------------------------------------------------------- 组织
@@ -232,7 +238,11 @@ export interface PendingReport {
   period_start: string
   period_end: string
   deadline: string
+  /** OVERDUE 已逾期 / UPCOMING 临近截止 */
+  status: 'OVERDUE' | 'UPCOMING'
   overdue_days: number
+  /** 未逾期时距截止还剩几天 */
+  days_left: number
 }
 
 /** 批量导入结果 */

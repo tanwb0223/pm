@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 # 与 alembic/versions/ 下最新的 revision 保持一致
 # 新增迁移时记得同步更新这里
-LATEST_REVISION = "0005_role_perms"
+LATEST_REVISION = "0007_report_grace"
 
 # alembic.ini 位置：app/db/alembic_sync.py → backend/alembic.ini
 _ALEMBIC_INI = Path(__file__).resolve().parent.parent.parent / "alembic.ini"
@@ -192,8 +192,37 @@ def _repair_alert_action_operator_id(engine, insp) -> bool:
     return True
 
 
+def _repair_user_password_columns(engine, insp) -> bool:
+    """sys_user 补上改密相关列（对齐 alembic 0006 与模型）
+
+    SQLite 支持 ADD COLUMN，无需重建表。
+    """
+    if "sys_user" not in insp.get_table_names():
+        return False
+    cols = {c["name"] for c in insp.get_columns("sys_user")}
+    added = False
+    with engine.begin() as conn:
+        if "must_change_password" not in cols:
+            conn.execute(
+                text(
+                    "ALTER TABLE sys_user ADD COLUMN must_change_password "
+                    "BOOLEAN NOT NULL DEFAULT 0"
+                )
+            )
+            added = True
+        if "password_updated_at" not in cols:
+            conn.execute(
+                text("ALTER TABLE sys_user ADD COLUMN password_updated_at DATETIME")
+            )
+            added = True
+    if added:
+        logger.info("修复历史漂移：sys_user 补齐改密列")
+    return added
+
+
 _KNOWN_REPAIRS = [
     _repair_alert_action_operator_id,
+    _repair_user_password_columns,
 ]
 
 

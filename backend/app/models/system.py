@@ -45,6 +45,12 @@ class SysUser(Base):
     phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
     email: Mapped[str | None] = mapped_column(String(128), nullable=True)
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # 首次登录/管理员重置后置 true：前端强制弹出改密框，改完清 false。
+    # 批量导入的初始密码是统一值，不加这个标记等于全校同密码。
+    must_change_password: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
+    password_updated_at: Mapped[datetime | None] = aware_timestamp(nullable=True)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="ACTIVE")
     last_login_at: Mapped[datetime | None] = aware_timestamp(nullable=True)
     created_at: Mapped[datetime] = aware_timestamp(server_default=func.now())

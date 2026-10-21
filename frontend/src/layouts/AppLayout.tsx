@@ -12,6 +12,7 @@ import {
   DatabaseOutlined,
   DownOutlined,
   FileTextOutlined,
+  LockOutlined,
   LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
@@ -25,6 +26,7 @@ import {
 import { Avatar, Badge, Button, Dropdown, Layout, Menu, Space, Tag, Typography } from 'antd'
 
 import { alertApi, authApi, collegeApi, majorApi } from '@/api'
+import ChangePasswordModal from '@/components/ChangePasswordModal'
 import { useAuthStore, useCan, useCanAny } from '@/stores/auth'
 import { clearQueryCache } from '@/lib/queryClient'
 import { useDictStore } from '@/stores/dict'
@@ -36,6 +38,9 @@ export default function AppLayout() {
   const navigate = useNavigate()
   const location = useLocation()
   const [collapsed, setCollapsed] = useState(false)
+  // 修改密码弹窗；forced 表示首次登录/被重置，必须改完才能继续
+  const [pwdOpen, setPwdOpen] = useState(false)
+  const [pwdForced, setPwdForced] = useState(false)
   const { user, setUser, resetSession, sessionKey } = useAuthStore()
   const setColleges = useDictStore((s) => s.setColleges)
   const setMajors = useDictStore((s) => s.setMajors)
@@ -51,6 +56,14 @@ export default function AppLayout() {
   useEffect(() => {
     if (me) setUser(me)
   }, [me, setUser])
+
+  // 首次登录或被管理员重置密码后，强制弹改密框（不可取消）
+  useEffect(() => {
+    if (me?.must_change_password) {
+      setPwdForced(true)
+      setPwdOpen(true)
+    }
+  }, [me?.must_change_password])
 
   /** 退出登录：先清空查询缓存与字典，再跳登录页，避免换账号后串号 */
   const handleLogout = () => {
@@ -266,6 +279,13 @@ export default function AppLayout() {
             menu={{
               items: [
                 {
+                  key: 'password',
+                  icon: <LockOutlined />,
+                  label: '修改密码',
+                  onClick: () => setPwdOpen(true),
+                },
+                { type: 'divider' },
+                {
                   key: 'logout',
                   icon: <LogoutOutlined />,
                   label: '退出登录',
@@ -310,6 +330,19 @@ export default function AppLayout() {
           <Outlet />
         </Content>
       </Layout>
+
+      <ChangePasswordModal
+        open={pwdOpen}
+        forced={pwdForced}
+        onClose={() => {
+          setPwdOpen(false)
+          setPwdForced(false)
+        }}
+        onSuccess={() => {
+          // 改完立即刷新 me，让 must_change_password 归零
+          if (me) setUser({ ...me, must_change_password: false })
+        }}
+      />
     </Layout>
   )
 }

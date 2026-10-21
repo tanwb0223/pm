@@ -35,6 +35,12 @@ export const authApi = {
     }),
   exchangeToken: (code: string) =>
     post<LoginResult>('/auth/token', { code }),
+  /** 修改自己的密码（校验原密码 + 强度） */
+  changePassword: (oldPassword: string, newPassword: string) =>
+    post<{ changed: boolean }>('/auth/change-password', {
+      old_password: oldPassword,
+      new_password: newPassword,
+    }),
 }
 
 // ================================================================ 认证管理（后台配置）
@@ -173,6 +179,16 @@ export const progressApi = {
         update_rate: number | null
       }[]
     >('/progress/college-compare', majorId ? { major_id: majorId } : undefined),
+  /** 行内催办：通知子项目负责人（24 小时内不重复） */
+  urge: (subId: number, message?: string) =>
+    post<{
+      sub_id: number
+      sub_name: string
+      owner_id: number
+      owner_name: string | null
+      channels: string[]
+      message: string
+    }>(`/subs/${subId}/urge`, { message }),
 }
 
 // ================================================================ 预警
@@ -222,6 +238,34 @@ export const reportApi = {
       { sub_id, week_start },
     ),
   pending: () => get<PendingReport[]>('/reports/pending'),
+  /** 补填放行记录 */
+  graces: (subId?: number) =>
+    get<
+      {
+        id: number
+        sub_id: number
+        sub_name: string
+        type: string
+        type_label: string
+        period_start: string | null
+        reason: string
+        granted_by: number
+        granted_by_name: string | null
+        granted_at: string
+        expires_on: string
+        is_active: boolean
+      }[]
+    >('/reports/graces', subId ? { sub_id: subId } : undefined),
+  /** 开启逾期补填（需 report:grant） */
+  grantGrace: (data: {
+    sub_id: number
+    type: string
+    period_start?: string | null
+    reason: string
+    days?: number
+  }) => post<{ id: number; expires_on: string }>('/reports/graces', data),
+  /** 撤销补填放行 */
+  revokeGrace: (id: number) => del<void>(`/reports/graces/${id}`),
   /** 填报选项：当前启用的报表类型（日报受 report.daily.enabled 开关控制） */
   options: () => get<{ types: string[]; daily_enabled: boolean }>('/reports/options'),
   timeliness: (params: { start: string; end: string; type?: string; major_id?: number }) =>

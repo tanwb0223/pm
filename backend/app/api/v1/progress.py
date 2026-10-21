@@ -197,3 +197,33 @@ def generate_snapshot(body: SnapshotIn, db: Session = Depends(get_db)):
     result = svc.generate_snapshots(body.day)
     db.commit()
     return ok(result)
+
+
+# ================================================================ 催办
+class UrgeIn(BaseModel):
+    message: str | None = Field(default=None, max_length=200, description="催办说明")
+
+
+@router.post(
+    "/subs/{sub_id}/urge",
+    summary="行内催办（通知子项目负责人）",
+    dependencies=[Depends(require_perm("progress:urge"))],
+)
+def urge_sub(
+    sub_id: int,
+    body: UrgeIn | None = None,
+    user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """文档 3.2(5)：在进度总表的行里直接催办
+
+    站内消息必发，负责人有邮箱时同时发邮件；24 小时内不重复催办。
+    """
+    svc = ProgressService(db)
+    result = svc.urge(
+        sub_id,
+        operator=user,
+        message=(body.message if body else None),
+    )
+    db.commit()
+    return ok(result)

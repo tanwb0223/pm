@@ -9,6 +9,7 @@ import {
   Form,
   Input,
   InputNumber,
+  Modal,
   Radio,
   Result,
   Select,
@@ -80,6 +81,8 @@ function ReportFillPageInner() {
   const queryClient = useQueryClient()
   const [form] = Form.useForm<FillFormValues>()
   const formCardRef = useRef<HTMLDivElement>(null)
+  // 开启逾期补填需要 report:grant（学院负责人及以上）
+  const canGrant = useCan()('report:grant')
 
   const [type, setType] = useState<ReportType>('WEEKLY')
   const [subId, setSubId] = useState<number | null>(null)
@@ -107,11 +110,21 @@ function ReportFillPageInner() {
     }
   }, [options, enabledTypes, type, form])
 
-  // 待填清单
+  // 待填清单：含已逾期与临近截止两类
+  const [onlyOverdue, setOnlyOverdue] = useState(false)
   const { data: pending = [], isLoading: pendingLoading } = useQuery({
     queryKey: ['report-pending'],
     queryFn: reportApi.pending,
   })
+
+  const pendingShown = useMemo(
+    () => (onlyOverdue ? pending.filter((p) => p.status === 'OVERDUE') : pending),
+    [pending, onlyOverdue],
+  )
+  const overdueCount = useMemo(
+    () => pending.filter((p) => p.status === 'OVERDUE').length,
+    [pending],
+  )
 
   // 进行中的子项目
   const { data: subPage } = useQuery({
@@ -170,6 +183,39 @@ function ReportFillPageInner() {
     formCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
+  // 开启补填放行（文档 4.3：超 3 天需学院负责人开）
+  const [graceOpen, setGraceOpen] = useState(false)
+  const [graceForm] = Form.useForm()
+  const openGrace = (row?: PendingReport) => {
+    graceForm.setFieldsValue({
+      sub_id: row?.sub_id,
+      type: row?.type ?? 'WEEKLY',
+      period_start: row?.period_start,
+      reason: '',
+      days: 7,
+    })
+    setGraceOpen(true)
+  }
+  const grantMut = useMutation({
+    mutationFn: (v: {
+      sub_id: number
+      type: string
+      period_start?: string | null
+      reason: string
+      days: number
+    }) => reportApi.grantGrace(v),
+    onSuccess: (r) => {
+      message.success(`已开启补填，有效期至 ${r.expires_on}`)
+      setGraceOpen(false)
+      graceForm.resetFields()
+      void queryClient.invalidateQueries({ queryKey: ['report-graces'] })
+    },
+    onError: (e: unknown) => {
+      const d = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      message.error(d || '开启失败')
+    },
+  })
+
   const handleSubmit = async () => {
     const values = await form.validateFields()
     const rtype = values.type
@@ -219,11 +265,17 @@ function ReportFillPageInner() {
       title: '截止时间',
       dataIndex: 'deadline',
       key: 'deadline',
-      width: 160,
+      width: 170,
       render: (v: string, r: PendingReport) => (
         <Space direction="vertical" size={0}>
           <span>{fmtDateTime(v)}</span>
-          {r.overdue_days > 0 && <Tag color="red">逾期{r.overdue_days}天</Tag>}
+          {r.status === 'OVERDUE' ? (
+            <Tag color="red">逾期{r.overdue_days}天</Tag>
+          ) : (
+            <Tag color="blue">
+              {r.days_left <= 0 ? '今日截止' : `还剩${r.days_left}天`}
+            </Tag>
+          )}
         </Space>
       ),
     },
@@ -243,17 +295,105 @@ function ReportFillPageInner() {
     <div className="page-container">
       <PageHeader title="报表填报" subtitle="按周期提交日报 / 周报 / 月报；周报可先自动生成初稿再修改" />
 
-      <Card title={`待填报表（${pending.length}）`} size="small" style={{ marginBottom: 16 }}>
+      <Card
+        title={
+          <Space size={8}>
+            <span>待填报表（{pendingShown.length}）</span>
+            {overdueCount > 0 && <Tag color="red">逾期 {overdueCount}</Tag>}
+          </Space>
+        }
+        size="small"
+        style={{ marginBottom: 16 }}
+        extra={
+          <Space size={10}>
+            <Space size={6}>
+              <span style={{ color: '#4b5563', fontSize: 13 }}>只看逾期</span>
+              <Switch size="small" checked={onlyOverdue} onChange={setOnlyOverdue} />
+            </Space>
+            {canGrant && (
+              <Button size="small" onClick={() => openGrace()}>
+                开启补填
+              </Button>
+            )}
+          </Space>
+        }
+      >
         <Table
           rowKey={(r) => `${r.sub_id}-${r.type}-${r.period_start}`}
           size="small"
           loading={pendingLoading}
           columns={pendingColumns}
-          dataSource={pending}
+          dataSource={pendingShown}
           pagination={false}
           locale={{ emptyText: '暂无待填报表' }}
         />
       </Card>
+
+      {/* 开启补填放行 */}
+      <Modal
+        open={graceOpen}
+        title="开启逾期补填"
+        okText="确认开启"
+        cancelText="取消"
+        confirmLoading={grantMut.isPending}
+        onOk={async () => {
+          const v = await graceForm.validateFields()
+          grantMut.mutate(v)
+        }}
+        onCancel={() => setGraceOpen(false)}
+        destroyOnClose
+      >
+        <p style={{ color: '#6b7280', marginBottom: 16 }}>
+          超过补填期的报表，开启后填报人可在有效期内补交。留空周期表示放行该类型的所有历史周期。
+        </p>
+        <Form form={graceForm} layout="vertical" preserve={false}>
+          <Form.Item
+            label="子项目"
+            name="sub_id"
+            rules={[{ required: true, message: '请选择子项目' }]}
+          >
+            <Select
+              showSearch
+              optionFilterProp="label"
+              placeholder="选择子项目"
+              options={subOptions}
+            />
+          </Form.Item>
+          <Form.Item
+            label="报表类型"
+            name="type"
+            rules={[{ required: true, message: '请选择类型' }]}
+          >
+            <Select
+              options={enabledTypes.map((t) => ({
+                value: t,
+                label: TYPE_LABEL[t] ?? t,
+              }))}
+            />
+          </Form.Item>
+          <Form.Item
+            label="周期起始日"
+            name="period_start"
+            extra="留空表示该类型的所有历史周期都可补填"
+          >
+            <Input placeholder="如 2026-09-21，留空为全部" />
+          </Form.Item>
+          <Form.Item
+            label="开启理由"
+            name="reason"
+            rules={[{ required: true, message: '必须填写理由' }]}
+          >
+            <TextArea rows={2} placeholder="如：教师出差未及时填报，补录" maxLength={500} />
+          </Form.Item>
+          <Form.Item
+            label="有效期（天）"
+            name="days"
+            rules={[{ required: true, message: '请填写有效期' }]}
+          >
+            <InputNumber min={1} max={90} style={{ width: 140 }} />
+          </Form.Item>
+        </Form>
+      </Modal>
 
       <div ref={formCardRef}>
         <Card title="填报表单" size="small">

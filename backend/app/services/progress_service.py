@@ -380,14 +380,34 @@ class ProgressService:
         def actual_at(d: date) -> int | None:
             """某天的实际进度
 
-            - 有快照：取快照值
+            优先级：填报记录 > 快照 > 推算
+
+            - 该日有填报记录：取当天最后一次填报值
+            - 该日无填报但有快照：取快照值
             - 无快照但在首次填报之后：取该日及之前最后一次填报值
             - 首次填报之前：0（项目还没开始，进度自然是 0）
             - 完全没有填报记录：None（不画线）
+
+            早期实现是「快照优先」，导致当天补填后曲线不更新：
+            快照是每日 01:00 生成的，当天再改进度，图上仍显示凌晨的旧值
+            （典型现象：列表显示 100%，趋势末点还是 10%）。
             """
+            # 1) 当天是否有填报记录（可能有多次，取最后一条）
+            latest_today = None
+            for r in records:
+                rd = r.created_at.astimezone(UTC).date()
+                if rd == d:
+                    latest_today = r.progress
+                elif rd > d:
+                    break
+            if latest_today is not None:
+                return latest_today
+
+            # 2) 无当天填报，退回快照
             snap = snaps.get(d)
             if snap is not None:
                 return snap.actual_progress
+
             if first_record_date is None:
                 return None
             if d < first_record_date:
@@ -509,3 +529,85 @@ class ProgressService:
         # 平均偏差从小到大（最滞后在前）
         out.sort(key=lambda x: (x["avg_deviation"] is None, x["avg_deviation"] or 0))
         return out
+
+    # ============================================================ 催办
+    def urge(self, sub_id: int, *, operator: Any, message: str | None = None) -> dict:
+        """行内催办（文档 3.2(5)：在行里就能直接改进度、直接催办）
+
+        向子项目负责人发送催办通知：
+        - 站内消息必发（负责人登录就能看到）
+        - 负责人配置了邮箱则同时发邮件
+        - 写一条 ProgRecord 留痕（is_urge 标记通过 note 前缀体现）
+
+        去重：同一子项目 24 小时内不重复催办，避免管理者连点刷屏。
+        """
+        from app.models.system import NotifyLog
+
+        sub = self.db.get(ProjSub, sub_id)
+        if sub is None or sub.deleted_at is not None:
+            raise NotFoundError("子项目不存在")
+
+        assert_sub_access(operator, sub)
+
+        if not sub.owner_id:
+            raise BusinessError("该子项目未设置负责人，无法催办")
+
+        # 24 小时内已催过则不重复
+        since = datetime.now(UTC) - timedelta(hours=24)
+        recent = self.db.scalar(
+            select(func.count()).select_from(NotifyLog).where(
+                NotifyLog.biz_type == "URGE",
+                NotifyLog.biz_id == sub_id,
+                NotifyLog.sent_at >= since,
+            )
+        )
+        if recent:
+            raise BusinessError("24 小时内已催办过，请勿重复催办")
+
+        owner = self.db.get(SysUser, sub.owner_id)
+        text = message or "进度滞后，请尽快更新进度"
+
+        # 留痕：写进进度变更记录，便于追溯谁催过
+        self.db.add(
+            ProgRecord(
+                sub_id=sub_id,
+                progress=sub.current_progress,
+                note=f"【催办】{operator.name}：{text}"[:500],
+                operator_id=operator.id,
+                is_no_change=True,
+                is_rollback=False,
+            )
+        )
+
+        from app.services.notify_service import NotifyService
+
+        svc = NotifyService(self.db)
+        channels = ["INNER"]
+        if owner and (owner.email or "").strip():
+            channels.append("EMAIL")
+
+        log_ids = []
+        for ch in channels:
+            row = NotifyLog(
+                biz_type="URGE",
+                biz_id=sub_id,
+                channel=ch,
+                receiver_id=sub.owner_id,
+                status="SUCCESS" if ch == "INNER" else "FAILED",
+                error=None if ch == "INNER" else "待发送",
+            )
+            self.db.add(row)
+            self.db.flush()
+            log_ids.append(row.id)
+            if ch != "INNER":
+                svc.deliver(row.id)
+
+        self.db.flush()
+        return {
+            "sub_id": sub_id,
+            "sub_name": sub.name,
+            "owner_id": sub.owner_id,
+            "owner_name": owner.name if owner else None,
+            "channels": channels,
+            "message": text,
+        }

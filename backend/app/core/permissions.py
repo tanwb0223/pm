@@ -27,7 +27,7 @@ ALL_PERMISSIONS: tuple[str, ...] = (
     "project:sub:view", "project:sub:edit", "project:check",
     "progress:update", "progress:onbehalf", "progress:urge",
     "alert:claim", "alert:close", "alert:transfer",
-    "report:fill", "report:void",
+    "report:fill", "report:void", "report:grant",
     "export:ledger", "export:progress",
     "risk:edit",
 )
@@ -63,18 +63,18 @@ ROLE_PERMISSIONS: dict[str, tuple[str, ...]] = {
         "alert:claim",
     ),
 
-    # 学院负责人：可代填、可关闭预警
+    # 学院负责人：可代填、可关闭预警、可开启逾期补填
     "COLLEGE_OWNER": VIEWER_PERMS + (
-        "report", "report:fill",
+        "report", "report:fill", "report:grant",
         "progress:update", "progress:onbehalf",
         "risk", "risk:list",
         "alert:claim", "alert:close",
         "project:college:edit",
     ),
 
-    # 大项目负责人：可催办、可编辑风险、可转交预警
+    # 大项目负责人：可催办、可编辑风险、可转交预警、可开启补填
     "MAJOR_OWNER": VIEWER_PERMS + (
-        "report", "report:fill",
+        "report", "report:fill", "report:grant",
         "progress:update", "progress:onbehalf", "progress:urge",
         "risk", "risk:list", "risk:edit",
         "alert:claim", "alert:close", "alert:transfer",
@@ -84,7 +84,7 @@ ROLE_PERMISSIONS: dict[str, tuple[str, ...]] = {
 
     # 项目总负责人：除系统管理外的全部业务权限
     "PROJECT_OWNER": VIEWER_PERMS + (
-        "report", "report:fill", "report:void",
+        "report", "report:fill", "report:void", "report:grant",
         "progress:update", "progress:onbehalf", "progress:urge",
         "risk", "risk:list", "risk:edit",
         "alert:claim", "alert:close", "alert:transfer",

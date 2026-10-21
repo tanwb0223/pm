@@ -73,6 +73,8 @@ def login_password(body: PasswordLoginIn, request: Request, db: Session = Depend
             "access_token": token,
             "token_type": "bearer",
             "user": {"id": user.id, "staff_no": user.staff_no, "name": user.name},
+            # 首次登录或管理员重置后为 true，前端据此强制弹改密框
+            "must_change_password": bool(user.must_change_password),
         }
     )
 
@@ -141,7 +143,11 @@ def exchange_token(body: ExchangeIn, request: Request, db: Session = Depends(get
 
 # ---------------------------------------------------------------- 当前用户
 @router.get("/me", summary="当前登录用户信息")
-def me(user: CurrentUser = Depends(get_current_user)):
+def me(user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
+    # CurrentUser 是精简会话对象（只含权限/范围），密码相关字段需回表查
+    from app.models.system import SysUser
+
+    row = db.get(SysUser, user.id)
     return ok(
         {
             "id": user.id,
@@ -151,8 +157,73 @@ def me(user: CurrentUser = Depends(get_current_user)):
             "roles": user.roles,
             "permissions": sorted(user.permissions),
             "scopes": [{"type": s.scope_type, "id": s.scope_id} for s in user.scopes],
+            "has_password": bool(row.password_hash) if row else False,
+            "must_change_password": bool(row.must_change_password) if row else False,
         }
     )
+
+
+# ---------------------------------------------------------------- 自助改密
+class ChangePasswordIn(BaseModel):
+    old_password: str = Field(min_length=1, max_length=128, description="当前密码")
+    new_password: str = Field(min_length=8, max_length=128, description="新密码")
+
+
+def _check_password_strength(pwd: str) -> None:
+    """密码强度：至少 8 位，且同时含字母和数字
+
+    早期只校验 min_length=6，Init@123456 这类弱口令能通过。
+    """
+    import re
+
+    if len(pwd) < 8:
+        raise BusinessError("新密码至少 8 位")
+    if not re.search(r"[A-Za-z]", pwd):
+        raise BusinessError("新密码需包含字母")
+    if not re.search(r"\d", pwd):
+        raise BusinessError("新密码需包含数字")
+    if pwd.lower() in {"12345678", "password", "init@123456", "admin@123"}:
+        raise BusinessError("新密码过于简单，请更换")
+
+
+@router.post("/change-password", summary="修改自己的密码")
+def change_password(
+    body: ChangePasswordIn,
+    user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """用户自助改密
+
+    - 必须校验旧密码，防止会话被劫持后直接改密
+    - 新密码不能与旧密码相同
+    - 改密成功后清掉 must_change_password
+    """
+    from datetime import UTC, datetime
+
+    from app.core.security import hash_password, verify_password
+    from app.models.system import SysUser
+
+    row = db.get(SysUser, user.id)
+    if row is None:
+        raise BusinessError("用户不存在")
+
+    # 纯第三方登录的账号可能没有本地密码
+    if not row.password_hash:
+        raise BusinessError("当前账号未设置本地密码，无需修改")
+
+    if not verify_password(body.old_password, row.password_hash):
+        raise BusinessError("原密码不正确")
+
+    if body.old_password == body.new_password:
+        raise BusinessError("新密码不能与原密码相同")
+
+    _check_password_strength(body.new_password)
+
+    row.password_hash = hash_password(body.new_password)
+    row.must_change_password = False
+    row.password_updated_at = datetime.now(UTC)
+    db.commit()
+    return ok({"changed": True})
 
 
 @router.get("/me/identities", summary="已绑定的第三方账号")

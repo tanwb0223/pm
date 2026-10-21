@@ -9,6 +9,7 @@
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 from datetime import UTC, date, datetime, time, timedelta
@@ -114,13 +115,14 @@ def job_hourly_scan() -> None:
 
 
 def job_daily_digest() -> None:
-    """每日 08:30：摘要（统计昨日新增与当前待处置，落日志）
+    """每日 08:30：预警摘要推送
 
-    早期这里是空壳（只打一行触发时间，统计代码被 `if False` 短路）。
-    现在输出真实数字，便于运维确认任务在跑、预警没有在积压。
-    邮件/站内推送由 notify_log 承载，后续接入实际发送通道。
+    需求 3.3(3)：每天上午发一条汇总提醒，不是每条都单独发。
+    统计昨日新增与当前待处置，落一条 DIGEST 通知给管理员，
+    由 NotifyService 实际投递邮件；未配置 SMTP 时记 SKIPPED 不影响任务。
     """
     from app.models.alert import Alert
+    from app.models.system import NotifyLog, SysUser
 
     db = SessionLocal()
     try:
@@ -142,12 +144,60 @@ def job_daily_digest() -> None:
                 Alert.deadline_at < datetime.now(UTC),
             )
         ) or 0
+        red = db.scalar(
+            select(func.count()).select_from(Alert).where(
+                Alert.status == "PENDING", Alert.level == "RED"
+            )
+        ) or 0
         logger.info(
-            "每日摘要：昨日新增预警 %s 条；当前待处置 %s 条（其中已超时 %s 条）",
-            new_yesterday, pending, overdue,
+            "每日摘要：昨日新增预警 %s 条；当前待处置 %s 条（其中已超时 %s 条，红色 %s 条）",
+            new_yesterday, pending, overdue, red,
         )
+
+        # 收件人：系统管理员（摘要发给全局管理者，不按数据范围拆分）
+        admins = list(
+            db.scalars(
+                text(
+                    "SELECT u.id FROM sys_user u "
+                    "JOIN sys_user_role ur ON ur.user_id=u.id "
+                    "JOIN sys_role r ON r.id=ur.role_id "
+                    "WHERE r.code='SYS_ADMIN' AND u.status='ACTIVE'"
+                )
+            )
+        )
+        if not admins:
+            logger.warning("每日摘要：未找到启用的系统管理员，跳过推送")
+            return
+
+        stats = json.dumps(
+            {
+                "new_yesterday": new_yesterday,
+                "pending": pending,
+                "overdue": overdue,
+                "red": red,
+                "date": yesterday.isoformat(),
+            },
+            ensure_ascii=False,
+        )
+        from app.services.notify_service import NotifyService, PENDING_MARK
+
+        svc = NotifyService(db)
+        for uid in admins:
+            row = NotifyLog(
+                biz_type="DIGEST",
+                biz_id=None,
+                channel="EMAIL",
+                receiver_id=uid,
+                status="FAILED",
+                error=stats,  # 正文数据暂存在 error，发送成功后清空
+            )
+            db.add(row)
+            db.flush()
+            svc.deliver(row.id)
+        db.commit()
     except Exception:
-        logger.exception("每日摘要统计失败")
+        db.rollback()
+        logger.exception("每日摘要推送失败")
     finally:
         db.close()
 
@@ -191,6 +241,30 @@ def job_database_backup() -> None:
         logger.error("数据库备份超时（超过 30 分钟）")
     except Exception:
         logger.exception("数据库备份异常")
+
+
+def job_retry_notify() -> None:
+    """每 10 分钟：重投失败的通知
+
+    邮件/短信可能因网络抖动或网关限流失败，这里按 MAX_RETRY 上限重试。
+    成功即清空 error，超过上限的保持 FAILED 供人工排查。
+    """
+    from app.services.notify_service import NotifyService
+
+    db = SessionLocal()
+    try:
+        stats = NotifyService(db).retry_pending()
+        if any(stats.values()):
+            logger.info(
+                "通知重投：成功 %s 条，失败 %s 条，跳过 %s 条",
+                stats["success"], stats["failed"], stats["skipped"],
+            )
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception("通知重投失败")
+    finally:
+        db.close()
 
 
 # ---------------------------------------------------------------- 启停
@@ -240,6 +314,14 @@ def start_scheduler() -> None:
             id="database_backup",
             replace_existing=True,
         )
+
+    # 每 10 分钟重投失败通知
+    _scheduler.add_job(
+        lambda: _with_lock(LOCK_SNAPSHOT_SCAN + 5, job_retry_notify),
+        CronTrigger(minute="*/10"),
+        id="retry_notify",
+        replace_existing=True,
+    )
 
     _scheduler.start()
     logger.info("定时任务已启动：%s", [j.id for j in _scheduler.get_jobs()])

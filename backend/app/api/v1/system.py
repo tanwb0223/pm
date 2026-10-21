@@ -138,6 +138,8 @@ def create_user(body: UserIn, db: Session = Depends(get_db)):
     pwd = data.pop("password", None)
     u = SysUser(**data)
     u.password_hash = hash_password(pwd) if pwd else None
+    # 管理员代设的初始密码属于「他人已知」的口令，强制首次登录后改掉
+    u.must_change_password = bool(pwd)
     db.add(u)
     db.commit()
     return ok({"id": u.id})
@@ -154,6 +156,8 @@ def update_user(user_id: int, body: UserUpdateIn, db: Session = Depends(get_db))
         setattr(u, k, v)
     if pwd:
         u.password_hash = hash_password(pwd)
+        # 管理员重置密码后，用户下次登录必须自己改
+        u.must_change_password = True
     db.commit()
     return ok()
 

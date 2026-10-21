@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Button, Card, Col, Empty, Row, Table, Tag } from 'antd'
+import { Button, Card, Col, Empty, Row, Space, Table, Tag } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 
 import { alertApi, reportApi, subApi } from '@/api'
@@ -90,11 +90,16 @@ export default function DashboardPage() {
       key: 'deadline',
       width: 170,
       render: (v: string, r) => {
-        const overdue = r.overdue_days > 0
-        return overdue ? (
-          <Tag color="red">逾期 {r.overdue_days} 天</Tag>
-        ) : (
-          fmtDateTime(v)
+        if (r.status === 'OVERDUE') {
+          return <Tag color="red">逾期 {r.overdue_days} 天</Tag>
+        }
+        return (
+          <Space direction="vertical" size={0}>
+            <span>{fmtDateTime(v)}</span>
+            <Tag color="blue">
+              {r.days_left <= 0 ? '今日截止' : `还剩 ${r.days_left} 天`}
+            </Tag>
+          </Space>
         )
       },
     },

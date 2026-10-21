@@ -23,6 +23,7 @@ from app.services.alert_rules import (
 )
 from app.services.calendar_service import CalendarService
 from app.services.config_service import ConfigService
+from app.services.notify_service import PENDING_MARK
 
 logger = logging.getLogger(__name__)
 
@@ -176,13 +177,18 @@ class AlertService:
         self.db.flush()
 
         # 通知（黄色仅提示，不进待办）
-        # 邮件通道受参数 notify.email.enabled 控制（早期该参数改了不生效）
+        # 邮件/短信通道受参数控制（早期 notify.email.enabled 改了不生效）
         email_enabled = self.config.get_bool("notify.email.enabled", True)
+        sms_enabled = self.config.get_bool("notify.sms.enabled", False)
         if cand.level in ("RED", "ORANGE"):
             for uid in receiver:
                 self._notify(alert, uid, "INNER", cand)
-                if cand.level == "RED" and email_enabled:
-                    self._notify(alert, uid, "EMAIL", cand)
+                if cand.level == "RED":
+                    if email_enabled:
+                        self._notify(alert, uid, "EMAIL", cand)
+                    # 需求 3.3(3)：短信只发红色预警，管理员可开关
+                    if sms_enabled:
+                        self._notify(alert, uid, "SMS", cand)
         else:
             for uid in receiver[:1]:
                 self._notify(alert, uid, "INNER", cand)
@@ -225,23 +231,35 @@ class AlertService:
         return ids
 
     def _notify(self, alert: Alert, receiver_id: int, channel: str, cand: AlertCandidate) -> None:
-        """写通知日志（一期只记日志，实际发送由后台任务处理）
+        """写通知日志并投递
 
-        notify_log.status 只能是 SUCCESS / FAILED：
-        - 站内消息即时投递 → SUCCESS
-        - 邮件/短信待后台任务发送 → 先记 FAILED 并写明原因，发送成功后更新
-          （这里用 SUCCESS 表示"已入队"，error 字段注明待发送）
+        notify_log.status 只能是 SUCCESS / FAILED / SKIPPED：
+        - 站内消息：写库即视为投递成功
+        - 邮件/短信：先落一条「待发送」，随即尝试实际发送。
+          需求要求红色预警「当时就推」，因此这里同步发送；
+          失败不影响预警主流程（异常吞掉并留痕），由后台任务重试。
         """
-        self.db.add(
-            NotifyLog(
-                biz_type="ALERT",
-                biz_id=alert.id,
-                channel=channel,
-                receiver_id=receiver_id,
-                status="SUCCESS",
-                error=None if channel == "INNER" else "待发送",
-            )
+        row = NotifyLog(
+            biz_type="ALERT",
+            biz_id=alert.id,
+            channel=channel,
+            receiver_id=receiver_id,
+            status="SUCCESS" if channel == "INNER" else "FAILED",
+            error=None if channel == "INNER" else PENDING_MARK,
         )
+        self.db.add(row)
+        self.db.flush()
+
+        if channel == "INNER":
+            return
+
+        # 邮件/短信实际投递；任何异常都不应中断预警扫描
+        try:
+            from app.services.notify_service import NotifyService
+
+            NotifyService(self.db).deliver(row.id)
+        except Exception:
+            logger.exception("通知投递异常：log_id=%s channel=%s", row.id, channel)
 
     # ============================================================ 查询
     def _scope_cond(self, user: Any):
