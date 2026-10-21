@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Alert,
@@ -17,6 +17,7 @@ import {
   Switch,
   Table,
   Tag,
+  Tooltip,
 } from 'antd'
 import { ThunderboltOutlined } from '@ant-design/icons'
 
@@ -80,7 +81,6 @@ function ReportFillPageInner() {
   const { message } = App.useApp()
   const queryClient = useQueryClient()
   const [form] = Form.useForm<FillFormValues>()
-  const formCardRef = useRef<HTMLDivElement>(null)
   // 开启逾期补填需要 report:grant（学院负责人及以上）
   const canGrant = useCan()('report:grant')
 
@@ -88,6 +88,8 @@ function ReportFillPageInner() {
   const [subId, setSubId] = useState<number | null>(null)
   const [syncProgress, setSyncProgress] = useState(false)
   const [picked, setPicked] = useState<PickedPeriod | null>(null)
+  // 填报弹窗：逾期与正常填报共用，靠 picked 区分模式
+  const [fillOpen, setFillOpen] = useState(false)
 
   // 填报选项：日报受 report.daily.enabled 控制，关闭时不出现在类型选择里
   const { data: options } = useQuery({
@@ -166,12 +168,13 @@ function ReportFillPageInner() {
   const submitMut = useMutation({
     mutationFn: (payload: Parameters<typeof reportApi.submit>[0]) => reportApi.submit(payload),
     onSuccess: () => {
-      message.success('报表已提交')
+      message.success(picked ? '补填已提交' : '报表已提交')
       form.resetFields()
       setType('WEEKLY')
       setSubId(null)
       setSyncProgress(false)
       setPicked(null)
+      setFillOpen(false)
       void queryClient.invalidateQueries({ queryKey: ['report-pending'] })
       void queryClient.invalidateQueries({ queryKey: ['report-list'] })
     },
@@ -191,7 +194,18 @@ function ReportFillPageInner() {
       deadline: row.deadline,
     })
     form.setFieldsValue({ sub_id: row.sub_id, type: row.type })
-    formCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    setFillOpen(true)
+  }
+
+  /** 打开「正常填报」（当前周期）弹窗 */
+  const openNormalFill = () => {
+    setPicked(null)
+    form.resetFields()
+    setSyncProgress(false)
+    setSubId(null)
+    setType(enabledTypes[0] ?? 'WEEKLY')
+    form.setFieldsValue({ type: enabledTypes[0] ?? 'WEEKLY' })
+    setFillOpen(true)
   }
 
   // 开启补填放行（文档 4.3：超 3 天需学院负责人开）
@@ -269,34 +283,40 @@ function ReportFillPageInner() {
     {
       title: '周期',
       key: 'period',
-      width: 210,
+      width: 200,
       render: (_: unknown, r: PendingReport) => `${r.period_start} ~ ${r.period_end}`,
+    },
+    {
+      title: '状态',
+      key: 'status',
+      width: 110,
+      render: (_: unknown, r: PendingReport) =>
+        r.status === 'OVERDUE' ? (
+          <Tag color="red">逾期 {r.overdue_days} 天</Tag>
+        ) : (
+          <Tag color="blue">
+            {r.days_left <= 0 ? '今日截止' : `还剩 ${r.days_left} 天`}
+          </Tag>
+        ),
     },
     {
       title: '截止时间',
       dataIndex: 'deadline',
       key: 'deadline',
-      width: 170,
-      render: (v: string, r: PendingReport) => (
-        <Space direction="vertical" size={0}>
-          <span>{fmtDateTime(v)}</span>
-          {r.status === 'OVERDUE' ? (
-            <Tag color="red">逾期{r.overdue_days}天</Tag>
-          ) : (
-            <Tag color="blue">
-              {r.days_left <= 0 ? '今日截止' : `还剩${r.days_left}天`}
-            </Tag>
-          )}
-        </Space>
-      ),
+      width: 150,
+      render: (v: string) => fmtDateTime(v),
     },
     {
       title: '操作',
       key: 'act',
       width: 100,
       render: (_: unknown, r: PendingReport) => (
-        <Button type="link" size="small" onClick={() => pickPending(r)}>
-          立即填报
+        <Button
+          type="link"
+          size="small"
+          onClick={() => pickPending(r)}
+        >
+          {r.status === 'OVERDUE' ? '补填' : '填报'}
         </Button>
       ),
     },
@@ -304,58 +324,250 @@ function ReportFillPageInner() {
 
   return (
     <div className="page-container">
-      <PageHeader title="报表填报" subtitle="按周期提交日报 / 周报 / 月报；周报可先自动生成初稿再修改" />
+      <PageHeader
+        title="报表填报"
+        subtitle="按周期提交日报 / 周报 / 月报；周报可先自动生成初稿再修改"
+        extra={
+          <Button type="primary" onClick={openNormalFill}>
+            填报本期报表
+          </Button>
+        }
+      />
 
+      {/* 待填清单：逾期与临近截止分开显示，点行内按钮直接弹窗填报 */}
       <Card
+            title={
+              <Space size={8}>
+                <span>待填报表（{pendingShown.length}）</span>
+                {overdueCount > 0 && <Tag color="red">逾期 {overdueCount}</Tag>}
+                {hiddenHistory > 0 && (
+                  <Tag color="default">已折叠 {hiddenHistory} 条</Tag>
+                )}
+              </Space>
+            }
+            size="small"
+            extra={
+              <Space size={8}>
+                <Tooltip title="默认只看最近 90 天">
+                  <Space size={4}>
+                    <span style={{ color: '#4b5563', fontSize: 12 }}>全部</span>
+                    <Switch
+                      size="small"
+                      checked={showAllHistory}
+                      onChange={setShowAllHistory}
+                    />
+                  </Space>
+                </Tooltip>
+                <Space size={4}>
+                  <span style={{ color: '#4b5563', fontSize: 12 }}>只看逾期</span>
+                  <Switch size="small" checked={onlyOverdue} onChange={setOnlyOverdue} />
+                </Space>
+                {canGrant && (
+                  <Button size="small" onClick={() => openGrace()}>
+                    开启补填
+                  </Button>
+                )}
+              </Space>
+            }
+          >
+            <Table
+              rowKey={(r) => `${r.sub_id}-${r.type}-${r.period_start}`}
+              size="small"
+              loading={pendingLoading}
+              columns={pendingColumns}
+              dataSource={pendingShown}
+              scroll={{ y: 480 }}
+              pagination={{
+                pageSize: 10,
+                size: 'small',
+                showSizeChanger: false,
+                showTotal: (t) => `共 ${t} 条`,
+              }}
+              locale={{ emptyText: '暂无待填报表' }}
+            />
+          </Card>
+
+      {/* 填报弹窗：正常填报与补填共用，靠 picked 区分模式 */}
+      <Modal
+        open={fillOpen}
+        width={720}
         title={
           <Space size={8}>
-            <span>待填报表（{pendingShown.length}）</span>
-            {overdueCount > 0 && <Tag color="red">逾期 {overdueCount}</Tag>}
-            {hiddenHistory > 0 && (
-              <Tag color="default">已折叠 {hiddenHistory} 条历史</Tag>
-            )}
+            <span>{picked ? '补填报表' : '填报报表'}</span>
+            {picked ? <Tag color="orange">补填</Tag> : <Tag color="green">本期</Tag>}
           </Space>
         }
-        size="small"
-        style={{ marginBottom: 16 }}
-        extra={
-          <Space size={10}>
-            <Space size={6}>
-              <span style={{ color: '#4b5563', fontSize: 13 }}>全部历史</span>
-              <Switch
-                size="small"
-                checked={showAllHistory}
-                onChange={setShowAllHistory}
-              />
-            </Space>
-            <Space size={6}>
-              <span style={{ color: '#4b5563', fontSize: 13 }}>只看逾期</span>
-              <Switch size="small" checked={onlyOverdue} onChange={setOnlyOverdue} />
-            </Space>
-            {canGrant && (
-              <Button size="small" onClick={() => openGrace()}>
-                开启补填
-              </Button>
-            )}
-          </Space>
-        }
+        okText={picked ? '提交补填' : '提交报表'}
+        cancelText="取消"
+        confirmLoading={submitMut.isPending}
+        onOk={handleSubmit}
+        onCancel={() => {
+          setFillOpen(false)
+          form.resetFields()
+          setPicked(null)
+          setSyncProgress(false)
+        }}
+        destroyOnClose
       >
-        <Table
-          rowKey={(r) => `${r.sub_id}-${r.type}-${r.period_start}`}
-          size="small"
-          loading={pendingLoading}
-          columns={pendingColumns}
-          dataSource={pendingShown}
-          pagination={{
-            pageSize: 10,
-            size: 'small',
-            showSizeChanger: true,
-            pageSizeOptions: [10, 20, 50],
-            showTotal: (t) => `共 ${t} 条`,
-          }}
-          locale={{ emptyText: '暂无待填报表' }}
-        />
-      </Card>
+        <Form form={form} layout="vertical" preserve={false}>
+          <Space size={16} wrap align="start">
+            <Form.Item
+              name="sub_id"
+              label="子项目"
+              rules={[{ required: true, message: '请选择子项目' }]}
+              style={{ minWidth: 320 }}
+            >
+              <Select
+                showSearch
+                optionFilterProp="label"
+                placeholder="选择进行中的子项目"
+                options={subOptions}
+                disabled={!!picked}
+                onChange={(v: number) => setSubId(v)}
+              />
+            </Form.Item>
+            <Form.Item name="type" label="报表类型" initialValue="WEEKLY">
+              <Radio.Group
+                optionType="button"
+                options={typeOptions}
+                disabled={!!picked}
+                onChange={(e) => setType(e.target.value as ReportType)}
+              />
+            </Form.Item>
+          </Space>
+
+          {picked ? (
+            <Alert
+              type="warning"
+              showIcon
+              style={{ marginBottom: 16 }}
+              message={
+                <Space size={6}>
+                  <Tag color="orange">补填</Tag>
+                  <span>
+                    {picked.period_start} ~ {picked.period_end}
+                  </span>
+                </Space>
+              }
+              description={`截止 ${fmtDateTime(picked.deadline)}。补填按该周期记录，并同步更新子项目进度。`}
+            />
+          ) : period ? (
+            <Alert
+              type="success"
+              showIcon
+              style={{ marginBottom: 16 }}
+              message={
+                <Space size={6}>
+                  <Tag color="green">本期</Tag>
+                  <span>
+                    {period.period_start} ~ {period.period_end}
+                  </span>
+                </Space>
+              }
+              description={`截止 ${fmtDateTime(period.deadline)}。`}
+            />
+          ) : null}
+
+          {type === 'WEEKLY' && subId != null && (
+            <Button
+              icon={<ThunderboltOutlined />}
+              loading={draftMut.isPending}
+              onClick={() => draftMut.mutate(subId)}
+              style={{ marginBottom: 16 }}
+            >
+              生成周报初稿
+            </Button>
+          )}
+
+          {type === 'DAILY' && (
+            <>
+              <Form.Item
+                name="f_today"
+                label="今天做了什么"
+                rules={[{ required: true, message: '请填写今天做了什么' }]}
+              >
+                <TextArea rows={3} placeholder="简述今天完成的进展" />
+              </Form.Item>
+              <Form.Item name="f_tomorrow" label="明天计划">
+                <TextArea rows={2} />
+              </Form.Item>
+              <Form.Item name="f_issues" label="问题">
+                <TextArea rows={2} placeholder="有什么问题需要协调（可空）" />
+              </Form.Item>
+            </>
+          )}
+
+          {type === 'WEEKLY' && (
+            <>
+              <Form.Item
+                name="f_summary"
+                label="本周进展"
+                rules={[{ required: true, message: '请填写本周进展' }]}
+              >
+                <TextArea rows={4} placeholder="本周完成情况，可点击「生成周报初稿」自动拼进度记录" />
+              </Form.Item>
+              <Form.Item name="f_next" label="下周计划">
+                <TextArea rows={2} placeholder="自动带出上期周报的下周计划" />
+              </Form.Item>
+              <Form.Item name="f_issues" label="问题与风险">
+                <TextArea rows={2} />
+              </Form.Item>
+            </>
+          )}
+
+          {type === 'MONTHLY' && (
+            <>
+              <Form.Item
+                name="f_completed"
+                label="本月完成"
+                rules={[{ required: true, message: '请填写本月完成情况' }]}
+              >
+                <TextArea rows={4} />
+              </Form.Item>
+              <Form.Item name="f_next" label="下月计划">
+                <TextArea rows={2} />
+              </Form.Item>
+              <Form.Item name="f_issues" label="问题与风险">
+                <TextArea rows={2} />
+              </Form.Item>
+              <Form.Item name="f_suggestions" label="意见建议">
+                <TextArea rows={2} />
+              </Form.Item>
+            </>
+          )}
+
+          <Collapse
+            ghost
+            items={[
+              {
+                key: 'progress',
+                label: '同步更新进度（可选）',
+                children: (
+                  <Space align="center" wrap>
+                    <Form.Item name="sync_progress" valuePropName="checked" noStyle>
+                      <Switch
+                        checkedChildren="同步"
+                        unCheckedChildren="不同步"
+                        onChange={(v) => setSyncProgress(v as boolean)}
+                      />
+                    </Form.Item>
+                    {syncProgress && (
+                      <Form.Item
+                        name="progress"
+                        label="最新进度（%）"
+                        rules={[{ required: true, message: '请填写进度' }]}
+                        style={{ marginBottom: 0, marginTop: 8 }}
+                      >
+                        <InputNumber min={0} max={100} style={{ width: 140 }} />
+                      </Form.Item>
+                    )}
+                  </Space>
+                ),
+              },
+            ]}
+          />
+        </Form>
+      </Modal>
 
       {/* 开启补填放行 */}
       <Modal
@@ -422,161 +634,6 @@ function ReportFillPageInner() {
           </Form.Item>
         </Form>
       </Modal>
-
-      <div ref={formCardRef}>
-        <Card title="填报表单" size="small">
-          <Form
-            form={form}
-            layout="vertical"
-            style={{ maxWidth: 720 }}
-            onFinish={handleSubmit}
-          >
-            <Space size={16} wrap align="start">
-              <Form.Item
-                name="sub_id"
-                label="子项目"
-                rules={[{ required: true, message: '请选择子项目' }]}
-                style={{ minWidth: 360 }}
-              >
-                <Select
-                  showSearch
-                  optionFilterProp="label"
-                  placeholder="选择进行中的子项目"
-                  options={subOptions}
-                  onChange={(v: number) => setSubId(v)}
-                />
-              </Form.Item>
-              <Form.Item name="type" label="报表类型" initialValue="WEEKLY">
-                <Radio.Group
-                  optionType="button"
-                  options={typeOptions}
-                  onChange={(e) => setType(e.target.value as ReportType)}
-                />
-              </Form.Item>
-            </Space>
-
-            {picked ? (
-              <Alert
-                type="warning"
-                showIcon
-                style={{ marginBottom: 16 }}
-                message={`补填期：${picked.period_start} ~ ${picked.period_end}，截止 ${fmtDateTime(picked.deadline)}`}
-              />
-            ) : period ? (
-              <Alert
-                type="info"
-                showIcon
-                style={{ marginBottom: 16 }}
-                message={`本期：${period.period_start} ~ ${period.period_end}，截止 ${fmtDateTime(period.deadline)}`}
-              />
-            ) : null}
-
-            {type === 'WEEKLY' && subId != null && (
-              <Button
-                icon={<ThunderboltOutlined />}
-                loading={draftMut.isPending}
-                onClick={() => draftMut.mutate(subId)}
-                style={{ marginBottom: 16 }}
-              >
-                生成周报初稿
-              </Button>
-            )}
-
-            {type === 'DAILY' && (
-              <>
-                <Form.Item
-                  name="f_today"
-                  label="今天做了什么"
-                  rules={[{ required: true, message: '请填写今天做了什么' }]}
-                >
-                  <TextArea rows={3} placeholder="简述今天完成的进展" />
-                </Form.Item>
-                <Form.Item name="f_tomorrow" label="明天计划">
-                  <TextArea rows={2} />
-                </Form.Item>
-                <Form.Item name="f_issues" label="问题">
-                  <TextArea rows={2} placeholder="有什么问题需要协调（可空）" />
-                </Form.Item>
-              </>
-            )}
-
-            {type === 'WEEKLY' && (
-              <>
-                <Form.Item
-                  name="f_summary"
-                  label="本周进展"
-                  rules={[{ required: true, message: '请填写本周进展' }]}
-                >
-                  <TextArea rows={4} placeholder="本周完成情况，可点击「生成周报初稿」自动拼进度记录" />
-                </Form.Item>
-                <Form.Item name="f_next" label="下周计划">
-                  <TextArea rows={2} placeholder="自动带出上期周报的下周计划" />
-                </Form.Item>
-                <Form.Item name="f_issues" label="问题与风险">
-                  <TextArea rows={2} />
-                </Form.Item>
-              </>
-            )}
-
-            {type === 'MONTHLY' && (
-              <>
-                <Form.Item
-                  name="f_completed"
-                  label="本月完成"
-                  rules={[{ required: true, message: '请填写本月完成情况' }]}
-                >
-                  <TextArea rows={4} />
-                </Form.Item>
-                <Form.Item name="f_next" label="下月计划">
-                  <TextArea rows={2} />
-                </Form.Item>
-                <Form.Item name="f_issues" label="问题与风险">
-                  <TextArea rows={2} />
-                </Form.Item>
-                <Form.Item name="f_suggestions" label="意见建议">
-                  <TextArea rows={2} />
-                </Form.Item>
-              </>
-            )}
-
-            <Collapse
-              ghost
-              style={{ marginBottom: 8 }}
-              items={[
-                {
-                  key: 'progress',
-                  label: '同步更新进度（可选）',
-                  children: (
-                    <Space align="center" wrap>
-                      <Form.Item name="sync_progress" valuePropName="checked" noStyle>
-                        <Switch
-                          checkedChildren="同步"
-                          unCheckedChildren="不同步"
-                          onChange={(v) => setSyncProgress(v as boolean)}
-                        />
-                      </Form.Item>
-                      {syncProgress && (
-                        <Form.Item
-                          name="progress"
-                          label="最新进度（%）"
-                          rules={[{ required: true, message: '请填写进度' }]}
-                          style={{ marginBottom: 0, marginTop: 8 }}
-                        >
-                          <InputNumber min={0} max={100} style={{ width: 140 }} />
-                        </Form.Item>
-                      )}
-                    </Space>
-                  ),
-                },
-              ]}
-            />
-
-            <Button type="primary" htmlType="submit" loading={submitMut.isPending}>
-              提交报表
-            </Button>
-          </Form>
-        </Card>
-      </div>
     </div>
   )
 }
