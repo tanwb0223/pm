@@ -72,15 +72,53 @@ MAJOR_COLLEGES = {
 }
 
 
+# 清空顺序：先子表后主表（SQLite 开启了外键约束，顺序错了会报错）
+_CLEAN_TABLES = (
+    "audit_log",
+    "alert_action",
+    "alert",
+    "report",
+    "prog_snapshot",
+    "prog_record",
+    "risk",
+    "proj_sub",
+    "proj_major_college",
+    "proj_major",
+    "notify_log",
+    "sys_user_role",
+    "sys_user",
+    "sys_holiday",
+    "sys_college",
+)
+
+
 def clean(db) -> None:
-    """清空业务数据（保留角色、权限、参数等系统种子）"""
-    db.execute(
-        text(
-            "TRUNCATE audit_log, alert_action, alert, report, prog_snapshot, prog_record, "
-            "proj_sub, proj_major_college, proj_major, sys_college, risk, notify_log, "
-            "sys_user_role, sys_user, sys_holiday RESTART IDENTITY CASCADE"
+    """清空业务数据（保留角色、权限、参数等系统种子）
+
+    同时兼容 SQLite 与 PostgreSQL：
+    - PostgreSQL 有 TRUNCATE ... RESTART IDENTITY CASCADE，一条语句即可
+    - SQLite 不支持 TRUNCATE，用 DELETE 并按依赖顺序逐表清理
+    早期版本只写了 PG 的 TRUNCATE，导致默认的 SQLite 部署执行 --clean 直接报错。
+    """
+    from app.db.dialect import is_sqlite
+    from app.db.session import _url
+
+    if is_sqlite(_url):
+        for table in _CLEAN_TABLES:
+            db.execute(text(f"DELETE FROM {table}"))
+        # SQLite 自增序列表存在时一并重置
+        try:
+            db.execute(text("DELETE FROM sqlite_sequence"))
+        except Exception:
+            db.rollback()
+    else:
+        db.execute(
+            text(
+                "TRUNCATE audit_log, alert_action, alert, report, prog_snapshot, prog_record, "
+                "proj_sub, proj_major_college, proj_major, sys_college, risk, notify_log, "
+                "sys_user_role, sys_user, sys_holiday RESTART IDENTITY CASCADE"
+            )
         )
-    )
     db.execute(text("DELETE FROM sys_role WHERE is_system = false"))
     db.commit()
     print("已清空业务数据")
@@ -205,21 +243,27 @@ def main() -> None:
 
             # 首次填报
             if not db.scalar(select(ProgRecord).where(ProgRecord.sub_id == s.id)):
-                class _Op:
-                    id = user_ids[owner]
-                    roles = ["SUB_OWNER"]
-                    permissions = {"progress:update"}
+                # 用真实的 CurrentUser，而不是临时假对象：
+                # update_progress 内部会走 assert_sub_access，需要 has_all_scope()/
+                # major_ids()/college_ids() 等完整接口，假对象一旦少方法就会崩。
+                from app.core.deps import CurrentUser, Scope
 
-                    def has_perm(self, code: str) -> bool:
-                        return True
-
+                operator = CurrentUser(
+                    id=user_ids[owner],
+                    staff_no=owner,
+                    name=owner,
+                    college_id=None,
+                    roles=["SUB_OWNER"],
+                    permissions={"progress:update"},
+                    scopes=[Scope(scope_type="ALL", scope_id=None)],
+                )
                 progress_svc.update_progress(
                     s.id,
                     progress=progress,
                     note="按计划推进",
                     no_change=False,
                     rollback_reason=None,
-                    operator=_Op(),
+                    operator=operator,
                 )
         db.flush()
         print(f"子项目：{len(sub_ids)} 个（含首期进度填报）")

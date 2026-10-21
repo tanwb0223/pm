@@ -10,6 +10,7 @@ import {
   Input,
   InputNumber,
   Radio,
+  Result,
   Select,
   Space,
   Switch,
@@ -20,6 +21,7 @@ import { ThunderboltOutlined } from '@ant-design/icons'
 
 import PageHeader from '@/components/PageHeader'
 import { reportApi, subApi } from '@/api'
+import { useCan } from '@/stores/auth'
 import { fmtDateTime } from '@/lib/constants'
 import type { PendingReport } from '@/types'
 
@@ -54,7 +56,26 @@ interface FillFormValues {
   progress?: number
 }
 
+/**
+ * 报表填报（守卫在外层）
+ *
+ * 填报页原本没有任何权限守卫：VIEWER 这类只读用户虽然侧边栏看不到
+ * 「报表填报」，但手输 /report/fill 就能进入并看到「提交报表」按钮，
+ * 点了才被后端 403 拒绝。这里按 report:fill 前置拦截。
+ */
 export default function ReportFillPage() {
+  const can = useCan()
+  if (!can('report:fill')) {
+    return (
+      <div className="page-container">
+        <Result status="403" title="无权限" subTitle="需要 report:fill 权限才能填报报表" />
+      </div>
+    )
+  }
+  return <ReportFillPageInner />
+}
+
+function ReportFillPageInner() {
   const { message } = App.useApp()
   const queryClient = useQueryClient()
   const [form] = Form.useForm<FillFormValues>()

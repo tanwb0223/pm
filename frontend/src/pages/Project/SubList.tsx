@@ -24,6 +24,7 @@ import { SubStatusTag } from '@/components/Tags'
 import { majorApi, subApi, systemApi } from '@/api'
 import { SUB_STATUS_LABEL, fmtDate } from '@/lib/constants'
 import { useDictStore } from '@/stores/dict'
+import { useCan } from '@/stores/auth'
 import type { Sub } from '@/types'
 
 interface SubFormValues {
@@ -95,6 +96,11 @@ function allowedNextStatuses(current: string): { value: string; label: string }[
 export default function SubListPage() {
   const queryClient = useQueryClient()
   const majors = useDictStore((s) => s.majors)
+  const can = useCan()
+
+  // 新建/编辑/删除子项目需要 project:sub:edit
+  // 原来这三个按钮无权限判断，只读用户也能看到（后端会 403）
+  const canEdit = can('project:sub:edit')
 
   // ---------------------------------------------------------------- 筛选
   const [fMajor, setFMajor] = useState<number | undefined>()
@@ -270,22 +276,25 @@ export default function SubListPage() {
       title: '操作',
       key: 'action',
       width: 110,
-      render: (_, record: Sub) => (
-        <Space size={4}>
-          <Button type="link" size="small" onClick={() => openEdit(record)}>
-            编辑
-          </Button>
-          <Popconfirm
-            title="确认删除该子项目？"
-            description="已结项的子项目不能删除"
-            onConfirm={() => removeMutation.mutate(record.id)}
-          >
-            <Button type="link" size="small" danger>
-              删除
+      render: (_, record: Sub) =>
+        canEdit ? (
+          <Space size={4}>
+            <Button type="link" size="small" onClick={() => openEdit(record)}>
+              编辑
             </Button>
-          </Popconfirm>
-        </Space>
-      ),
+            <Popconfirm
+              title="确认删除该子项目？"
+              description="已结项的子项目不能删除"
+              onConfirm={() => removeMutation.mutate(record.id)}
+            >
+              <Button type="link" size="small" danger>
+                删除
+              </Button>
+            </Popconfirm>
+          </Space>
+        ) : (
+          <span style={{ color: '#9ca3af' }}>—</span>
+        ),
     },
   ]
 
@@ -295,16 +304,18 @@ export default function SubListPage() {
         title="子项目列表"
         subtitle="进度填报与预警的最小单元，须同时归属大项目和学院"
         extra={
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={() => {
-              createForm.resetFields()
-              setCreateOpen(true)
-            }}
-          >
-            新建子项目
-          </Button>
+          canEdit && (
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={() => {
+                createForm.resetFields()
+                setCreateOpen(true)
+              }}
+            >
+              新建子项目
+            </Button>
+          )
         }
       />
 

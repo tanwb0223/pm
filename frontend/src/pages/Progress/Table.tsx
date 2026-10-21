@@ -30,6 +30,7 @@ import { DeviationText, SubStatusTag } from '@/components/Tags'
 import { exportApi, progressApi, subApi } from '@/api'
 import { SUB_STATUS_LABEL, fmtDate, fmtDateTime } from '@/lib/constants'
 import { useDictStore } from '@/stores/dict'
+import { useCan } from '@/stores/auth'
 import type { ProgressRow } from '@/types'
 
 /** 留痕记录（subApi.records 返回项） */
@@ -128,6 +129,9 @@ export default function ProgressTablePage() {
   const queryClient = useQueryClient()
   const colleges = useDictStore((s) => s.colleges)
   const majors = useDictStore((s) => s.majors)
+  const can = useCan()
+  // 行内「填报」需要 progress:update；无权限时只保留只读的「趋势」
+  const canUpdate = can('progress:update')
 
   const [filters, setFilters] = useState<Filters>({ sort: 'deviation', only_abnormal: false })
   const [page, setPage] = useState(1)
@@ -290,9 +294,11 @@ export default function ProgressTablePage() {
       width: 130,
       render: (_, r) => (
         <Space size={0}>
-          <Button type="link" size="small" onClick={() => openFill(r)}>
-            填报
-          </Button>
+          {canUpdate && (
+            <Button type="link" size="small" onClick={() => openFill(r)}>
+              填报
+            </Button>
+          )}
           <Button type="link" size="small" onClick={() => openTrend(r)}>
             趋势
           </Button>

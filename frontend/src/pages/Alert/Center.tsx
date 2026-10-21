@@ -24,6 +24,7 @@ import { AlertLevelTag, AlertStatusTag, AlertTypeTag } from '@/components/Tags'
 import { alertApi, systemApi } from '@/api'
 import { ALERT_LEVEL_LABEL, ALERT_STATUS_LABEL, ALERT_TYPE_LABEL, daysLeft, fmtDateTime } from '@/lib/constants'
 import { useDictStore } from '@/stores/dict'
+import { useCan } from '@/stores/auth'
 import type { Alert, AlertGroup } from '@/types'
 
 /** 不可关闭/忽略的预警类型（只能补齐数据自动关闭） */
@@ -49,6 +50,13 @@ interface Filters {
 export default function AlertCenterPage() {
   const queryClient = useQueryClient()
   const majors = useDictStore((s) => s.majors)
+  const can = useCan()
+
+  // 处置按钮按权限点显示：认领 alert:claim / 关闭与忽略 alert:close / 转交 alert:transfer
+  // 原来三个按钮无权限判断，只读用户也能看到并点击（后端会 403，但界面上不该出现）
+  const canClaim = can('alert:claim')
+  const canClose = can('alert:close')
+  const canTransfer = can('alert:transfer')
 
   const [filters, setFilters] = useState<Filters>({ only_mine: false })
   const [page, setPage] = useState(1)
@@ -197,7 +205,7 @@ export default function AlertCenterPage() {
         const immutable = IMMUTABLE_TYPES.has(r.alert_type)
         return (
           <Space size={0} wrap>
-            {r.status === 'PENDING' && (
+            {r.status === 'PENDING' && canClaim && (
               <Button
                 type="link"
                 size="small"
@@ -281,14 +289,17 @@ export default function AlertCenterPage() {
         title="预警中心"
         subtitle="红色邮件+站内实时提醒；橙色进每日摘要；黄色仅提示不进待办"
         extra={
-          <Button
-            type="primary"
-            icon={<ScanOutlined />}
-            loading={scanMutation.isPending}
-            onClick={() => scanMutation.mutate()}
-          >
-            执行扫描
-          </Button>
+          // 扫描接口要求 system:config，普通用户不该看到这个按钮
+          can('system:config') && (
+            <Button
+              type="primary"
+              icon={<ScanOutlined />}
+              loading={scanMutation.isPending}
+              onClick={() => scanMutation.mutate()}
+            >
+              执行扫描
+            </Button>
+          )
         }
       />
 
