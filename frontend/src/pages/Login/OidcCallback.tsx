@@ -4,6 +4,7 @@ import { Button, Result, Spin } from 'antd'
 
 import { authApi } from '@/api'
 import { useAuthStore } from '@/stores/auth'
+import { clearQueryCache, queryClient } from '@/lib/queryClient'
 
 /** 第三方登录回调落地页：拿一次性 login_code 换 JWT */
 export default function OidcCallback() {
@@ -35,9 +36,12 @@ export default function OidcCallback() {
     authApi
       .exchangeToken(loginCode)
       .then(async (result) => {
+        // 换账号：先清掉上一个账号的查询缓存
+        clearQueryCache()
         setToken(result.access_token)
         const me = await authApi.me()
         setUser(me)
+        queryClient.setQueryData(['me', useAuthStore.getState().sessionKey], me)
         navigate(redirectAfter, { replace: true })
       })
       .catch((e: unknown) => {

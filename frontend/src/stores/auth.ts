@@ -9,7 +9,10 @@ interface AuthState {
   user: MeInfo | null
   setToken: (token: string) => void
   setUser: (user: MeInfo) => void
-  logout: () => void
+  /** 换账号时递增，用作查询缓存的作用域前缀，避免读到上一个账号的数据 */
+  sessionKey: number
+  /** 登出：清空登录态 + 递增 sessionKey（由调用方负责清 React Query 缓存） */
+  resetSession: () => void
 }
 
 /**
@@ -25,12 +28,14 @@ export const useAuthStore = create<AuthState>()(
     (set) => ({
       token: null,
       user: null,
+      sessionKey: 0,
 
       setToken: (token) => set({ token }),
 
       setUser: (user) => set({ user }),
 
-      logout: () => set({ token: null, user: null }),
+      resetSession: () =>
+        set((s) => ({ token: null, user: null, sessionKey: s.sessionKey + 1 })),
     }),
     {
       name: 'pm-auth',

@@ -6,6 +6,7 @@ import { LockOutlined, ThunderboltFilled, UserOutlined } from '@ant-design/icons
 
 import { authApi } from '@/api'
 import { useAuthStore } from '@/stores/auth'
+import { clearQueryCache, queryClient } from '@/lib/queryClient'
 import type { AuthProviderInfo } from '@/types'
 
 const { Text } = Typography
@@ -52,9 +53,13 @@ export default function LoginPage() {
     setSubmitting(true)
     try {
       const result = await authApi.login(values.username.trim(), values.password)
+      // 换账号：先清掉上一个账号的全部查询缓存，再写新 token
+      clearQueryCache()
       setToken(result.access_token)
       const me = await authApi.me()
       setUser(me)
+      // 预热 ['me'] 缓存，避免 AppLayout 挂载时又打一次接口
+      queryClient.setQueryData(['me', useAuthStore.getState().sessionKey], me)
       navigate(redirect, { replace: true })
     } catch {
       // 错误提示已由拦截器统一弹出

@@ -25,6 +25,7 @@ import { Avatar, Badge, Button, Dropdown, Layout, Menu, Space, Tag, Typography }
 
 import { alertApi, authApi, collegeApi, majorApi } from '@/api'
 import { useAuthStore, useCan } from '@/stores/auth'
+import { clearQueryCache } from '@/lib/queryClient'
 import { useDictStore } from '@/stores/dict'
 
 const { Header, Sider, Content } = Layout
@@ -34,19 +35,30 @@ export default function AppLayout() {
   const navigate = useNavigate()
   const location = useLocation()
   const [collapsed, setCollapsed] = useState(false)
-  const { user, setUser, logout } = useAuthStore()
+  const { user, setUser, resetSession, sessionKey } = useAuthStore()
   const setColleges = useDictStore((s) => s.setColleges)
   const setMajors = useDictStore((s) => s.setMajors)
 
   // 加载当前用户
+  // queryKey 带上 sessionKey：换账号后 sessionKey 递增，强制重新拉取，
+  // 不会命中上一个账号残留的 ['me'] 缓存（否则会用旧账号覆盖新登录用户）。
   const { data: me } = useQuery({
-    queryKey: ['me'],
+    queryKey: ['me', sessionKey],
     queryFn: authApi.me,
     staleTime: 5 * 60 * 1000,
   })
   useEffect(() => {
     if (me) setUser(me)
   }, [me, setUser])
+
+  /** 退出登录：先清空查询缓存与字典，再跳登录页，避免换账号后串号 */
+  const handleLogout = () => {
+    clearQueryCache()
+    setColleges([])
+    setMajors([])
+    resetSession()
+    navigate('/login')
+  }
 
   // 加载字典
   const { data: colleges } = useQuery({ queryKey: ['colleges'], queryFn: collegeApi.list })
@@ -219,10 +231,7 @@ export default function AppLayout() {
                   key: 'logout',
                   icon: <LogoutOutlined />,
                   label: '退出登录',
-                  onClick: () => {
-                    logout()
-                    navigate('/login')
-                  },
+                  onClick: handleLogout,
                 },
               ],
             }}

@@ -17,6 +17,7 @@ import axios, {
 import { message } from 'antd'
 
 import type { ApiResp } from '@/types'
+import { clearQueryCache } from '@/lib/queryClient'
 
 /** localStorage 里 zustand persist 的 key（见 stores/auth.ts） */
 const AUTH_STORAGE_KEY = 'pm-auth'
@@ -42,6 +43,13 @@ function clearAuthAndRedirect() {
     localStorage.removeItem(AUTH_STORAGE_KEY)
   } catch {
     // 忽略存储异常
+  }
+  // 顺带清掉内存里的查询缓存：虽然下面整页跳转会重置，但先清一次
+  // 可以避免跳转前的短暂窗口里渲染出上一个账号的数据。
+  try {
+    clearQueryCache()
+  } catch {
+    // ignore
   }
   const { pathname, search } = window.location
   if (!pathname.startsWith('/login')) {
