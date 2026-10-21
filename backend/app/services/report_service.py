@@ -515,6 +515,38 @@ class ReportService:
             raise NotFoundError("报表不存在")
         return rep
 
+    def periods_between(
+        self, rtype: str, start: date, end: date
+    ) -> list[tuple[date, date]]:
+        """枚举 [start, end] 区间内的所有报表周期（按周期起始日升序）
+
+        用于回溯历史逾期：从子项目计划开始起，逐周期检查是否漏填。
+        对齐到周期边界，避免 start 落在周期中间时漏掉该周期。
+        """
+        if rtype == "DAILY":
+            step_days = 1
+        elif rtype == "WEEKLY":
+            step_days = 7
+        elif rtype == "MONTHLY":
+            step_days = 0  # 按月推进，单独处理
+        else:
+            raise BusinessError(f"未知报表类型：{rtype}")
+
+        out: list[tuple[date, date]] = []
+        cur = self.period_of(rtype, start)[0]
+        guard = 0
+        # 上限保护：日报回溯 10 年也不过 3650 条，这里给 5000 兜底
+        while cur <= end and guard < 5000:
+            guard += 1
+            p_start, p_end = self.period_of(rtype, cur)
+            out.append((p_start, p_end))
+            if step_days:
+                cur = p_start + timedelta(days=step_days)
+            else:
+                # 月报：跳到下月 1 号
+                cur = self.month_end(p_start) + timedelta(days=1)
+        return out
+
     # ============================================================ 待填清单
     def pending_list(
         self,
@@ -530,8 +562,9 @@ class ReportService:
         - OVERDUE    已过截止时间仍未提交（需要催）
         - UPCOMING   已进入填报窗口、还没到截止（提前提醒，避免逾期）
 
-        早期实现只返回 OVERDUE，教师在截止前完全看不到提醒，
-        等发现时已经逾期了——需求 4.3 的本意是「该填了就提醒」。
+        回溯范围：从子项目计划开始日起，逐周期检查到当前周期。
+        早期实现只看「今天所在的周期」，导致逾期报表一旦跨过周期就从
+        清单里彻底消失——教师漏交一次，之后再也看不到，也就永远补不上。
 
         Args:
             include_upcoming: 是否包含尚未到截止的（默认包含）
@@ -551,49 +584,57 @@ class ReportService:
 
         now = datetime.now(UTC)
         upcoming_cutoff = now + timedelta(days=max(0, upcoming_days))
+
+        # 已提交的（子项目, 类型, 周期）集合，一次性查出来避免 N+1
+        submitted: set[tuple[int, str, date]] = {
+            (r.sub_id, r.type, r.period_start)
+            for r in self.db.scalars(
+                select(Report).where(Report.status == "SUBMITTED")
+            )
+        }
+
         out = []
         for sub in subs:
+            # 回溯起点：优先用计划开始日；没有计划则只看当前周期
+            # （避免给没有计划期的项目生成一大堆历史逾期）
             for rtype in types:
-                p_start, p_end = self.period_of(rtype, day)
-                if not self.is_due(rtype, sub, p_start, day):
-                    continue
+                if sub.plan_start:
+                    periods = self.periods_between(rtype, sub.plan_start, day)
+                else:
+                    periods = [self.period_of(rtype, day)]
 
-                deadline = self.deadline_of(rtype, p_start)
-                is_overdue = now >= deadline
-                if not is_overdue:
-                    # 未到截止：只在 include_upcoming 且已进入提醒窗口时返回
-                    if not include_upcoming or deadline > upcoming_cutoff:
+                for p_start, p_end in periods:
+                    if not self.is_due(rtype, sub, p_start, day):
                         continue
 
-                exists = self.db.scalar(
-                    select(Report).where(
-                        Report.sub_id == sub.id,
-                        Report.type == rtype,
-                        Report.period_start == p_start,
-                        Report.status == "SUBMITTED",
+                    deadline = self.deadline_of(rtype, p_start)
+                    is_overdue = now >= deadline
+                    if not is_overdue:
+                        # 未到截止：只在 include_upcoming 且已进入提醒窗口时返回
+                        if not include_upcoming or deadline > upcoming_cutoff:
+                            continue
+
+                    if (sub.id, rtype, p_start) in submitted:
+                        continue
+
+                    out.append(
+                        {
+                            "sub_id": sub.id,
+                            "sub_name": sub.name,
+                            "type": rtype,
+                            "type_label": TYPE_LABEL[rtype],
+                            "period_start": p_start,
+                            "period_end": p_end,
+                            "deadline": deadline,
+                            # OVERDUE 已逾期 / UPCOMING 临近截止
+                            "status": "OVERDUE" if is_overdue else "UPCOMING",
+                            "overdue_days": (now - deadline).days if is_overdue else 0,
+                            # 未逾期时为距截止还剩几天，便于前端显示「还剩 N 天」
+                            "days_left": 0 if is_overdue else (deadline - now).days,
+                        }
                     )
-                )
-                if exists:
-                    continue
 
-                out.append(
-                    {
-                        "sub_id": sub.id,
-                        "sub_name": sub.name,
-                        "type": rtype,
-                        "type_label": TYPE_LABEL[rtype],
-                        "period_start": p_start,
-                        "period_end": p_end,
-                        "deadline": deadline,
-                        # OVERDUE 已逾期 / UPCOMING 临近截止
-                        "status": "OVERDUE" if is_overdue else "UPCOMING",
-                        "overdue_days": (now - deadline).days if is_overdue else 0,
-                        # 未逾期时为距截止还剩几天，便于前端显示「还剩 N 天」
-                        "days_left": 0 if is_overdue else (deadline - now).days,
-                    }
-                )
-
-        # 逾期在前，同状态内按截止时间升序（最急的排最前）
+        # 逾期在前；同状态内按截止时间升序（最急的排最前）
         out.sort(key=lambda x: (x["status"] != "OVERDUE", x["deadline"]))
         return out
 

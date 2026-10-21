@@ -110,21 +110,32 @@ function ReportFillPageInner() {
     }
   }, [options, enabledTypes, type, form])
 
-  // 待填清单：含已逾期与临近截止两类
+  // 待填清单：含已逾期与临近截止两类，回溯到子项目计划开始
   const [onlyOverdue, setOnlyOverdue] = useState(false)
+  // 历史逾期可能很多（回溯到计划开始），默认只看最近 90 天，可切换全部
+  const [showAllHistory, setShowAllHistory] = useState(false)
   const { data: pending = [], isLoading: pendingLoading } = useQuery({
     queryKey: ['report-pending'],
     queryFn: reportApi.pending,
   })
 
-  const pendingShown = useMemo(
-    () => (onlyOverdue ? pending.filter((p) => p.status === 'OVERDUE') : pending),
-    [pending, onlyOverdue],
-  )
+  const pendingShown = useMemo(() => {
+    let list = pending
+    if (!showAllHistory) {
+      const cutoff = new Date()
+      cutoff.setDate(cutoff.getDate() - 90)
+      const cut = cutoff.toISOString().slice(0, 10)
+      list = list.filter((p) => p.period_start >= cut || p.status === 'UPCOMING')
+    }
+    if (onlyOverdue) list = list.filter((p) => p.status === 'OVERDUE')
+    return list
+  }, [pending, onlyOverdue, showAllHistory])
+
   const overdueCount = useMemo(
     () => pending.filter((p) => p.status === 'OVERDUE').length,
     [pending],
   )
+  const hiddenHistory = pending.length - pendingShown.length
 
   // 进行中的子项目
   const { data: subPage } = useQuery({
@@ -300,12 +311,23 @@ function ReportFillPageInner() {
           <Space size={8}>
             <span>待填报表（{pendingShown.length}）</span>
             {overdueCount > 0 && <Tag color="red">逾期 {overdueCount}</Tag>}
+            {hiddenHistory > 0 && (
+              <Tag color="default">已折叠 {hiddenHistory} 条历史</Tag>
+            )}
           </Space>
         }
         size="small"
         style={{ marginBottom: 16 }}
         extra={
           <Space size={10}>
+            <Space size={6}>
+              <span style={{ color: '#4b5563', fontSize: 13 }}>全部历史</span>
+              <Switch
+                size="small"
+                checked={showAllHistory}
+                onChange={setShowAllHistory}
+              />
+            </Space>
             <Space size={6}>
               <span style={{ color: '#4b5563', fontSize: 13 }}>只看逾期</span>
               <Switch size="small" checked={onlyOverdue} onChange={setOnlyOverdue} />
@@ -324,7 +346,13 @@ function ReportFillPageInner() {
           loading={pendingLoading}
           columns={pendingColumns}
           dataSource={pendingShown}
-          pagination={false}
+          pagination={{
+            pageSize: 10,
+            size: 'small',
+            showSizeChanger: true,
+            pageSizeOptions: [10, 20, 50],
+            showTotal: (t) => `共 ${t} 条`,
+          }}
           locale={{ emptyText: '暂无待填报表' }}
         />
       </Card>
