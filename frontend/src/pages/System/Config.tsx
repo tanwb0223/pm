@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Alert, App, Button, Input, InputNumber, Modal, Result, Space, Table, Tag } from 'antd'
+import { Alert, App, Button, Input, InputNumber, Modal, Result, Space, Tag } from 'antd'
 import { SearchOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 
+import DataTable from '@/components/DataTable'
 import PageHeader from '@/components/PageHeader'
 import { systemApi } from '@/api'
 import { useAuthStore, useCan } from '@/stores/auth'
@@ -34,6 +35,8 @@ function ConfigPageInner() {
   const canWrite = true
 
   const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
   const [editing, setEditing] = useState<ConfigRow | null>(null)
   const [value, setValue] = useState<string | number>('')
 
@@ -114,12 +117,34 @@ function ConfigPageInner() {
           placeholder="按参数键或说明过滤"
           style={{ width: 300 }}
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => {
+            setSearch(e.target.value)
+            setPage(1)
+          }}
         />
         <span style={{ color: '#6b7280', fontSize: 13 }}>共 {rows.length} 项</span>
       </Space>
 
-      <Table rowKey="key" columns={columns} dataSource={rows} loading={isLoading} pagination={false} size="middle" />
+      <DataTable
+        rowKey="key"
+        columns={columns}
+        dataSource={rows}
+        loading={isLoading}
+        size="middle"
+        minTableWidth={760}
+        pagination={{
+          current: page,
+          pageSize,
+          total: rows.length,
+          showSizeChanger: true,
+          pageSizeOptions: [20, 50, 100, 200],
+          showTotal: (t) => `共 ${t} 项`,
+          onChange: (p, ps) => {
+            setPage(p)
+            setPageSize(ps)
+          },
+        }}
+      />
 
       <Modal
         title="修改参数"

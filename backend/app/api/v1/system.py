@@ -55,7 +55,7 @@ class UserUpdateIn(BaseModel):
 def pick_users(
     keyword: str | None = None,
     college_id: int | None = None,
-    limit: int = Query(default=30, ge=1, le=200),
+    limit: int = Query(default=30, ge=1, le=500),
     db: Session = Depends(get_db),
 ):
     """供项目负责人、预警转交等场景选择人员。
@@ -90,7 +90,7 @@ def list_users(
     college_id: int | None = None,
     status: str | None = None,
     page_no: int = Query(default=1, ge=1, alias="page"),
-    page_size: int = Query(default=20, ge=1, le=200),
+    page_size: int = Query(default=20, ge=1, le=500),
     db: Session = Depends(get_db),
 ):
     stmt = select(SysUser)
@@ -422,7 +422,7 @@ def list_audit(
     action: str | None = None,
     target_type: str | None = None,
     page_no: int = Query(default=1, ge=1, alias="page"),
-    page_size: int = Query(default=20, ge=1, le=200),
+    page_size: int = Query(default=20, ge=1, le=500),
     db: Session = Depends(get_db),
 ):
     stmt = select(AuditLog)

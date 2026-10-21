@@ -101,7 +101,7 @@ def list_reports(
     submitted_from: date | None = None,
     submitted_to: date | None = None,
     page_no: int = Query(default=1, ge=1, alias="page"),
-    page_size: int = Query(default=20, ge=1, le=200),
+    page_size: int = Query(default=20, ge=1, le=500),
     user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
