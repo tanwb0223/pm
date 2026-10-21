@@ -402,7 +402,8 @@ export default function ProgressTablePage() {
                   key: 'attachments',
                   label: '附件材料',
                   children: (
-                    <AttachmentPanel bizType="SUB" bizId={r.id} />
+                    // 无进度更新权限时附件只读：隐藏上传区与删除按钮
+                    <AttachmentPanel bizType="SUB" bizId={r.id} readOnly={!canUpdate} />
                   ),
                 },
               ]}

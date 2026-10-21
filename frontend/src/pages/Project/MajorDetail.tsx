@@ -24,6 +24,7 @@ import PageHeader from '@/components/PageHeader'
 import { MajorStatusTag, SubStatusTag } from '@/components/Tags'
 import { collegeApi, majorApi, subApi, systemApi } from '@/api'
 import { fmtDate } from '@/lib/constants'
+import { useCan } from '@/stores/auth'
 import type { College, MajorCollege, Sub, UserItem } from '@/types'
 
 /** 人员下拉（限定学院） */
@@ -64,6 +65,9 @@ export default function MajorDetailPage() {
   const majorId = Number(id)
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const can = useCan()
+  // 添加/移除参与学院需要 project:college:edit；完整性检查只读，登录即可
+  const canEditCollege = can('project:college:edit')
 
   // ---------------------------------------------------------------- 数据
   const { data: major, isLoading } = useQuery({
@@ -151,17 +155,20 @@ export default function MajorDetailPage() {
       title: '操作',
       key: 'action',
       width: 90,
-      render: (_, record: MajorCollege) => (
-        <Popconfirm
-          title="确认移除该学院？"
-          description="学院下有子项目时无法移除"
-          onConfirm={() => removeCollegeMutation.mutate(record.college_id)}
-        >
-          <Button type="link" size="small" danger>
-            移除
-          </Button>
-        </Popconfirm>
-      ),
+      render: (_, record: MajorCollege) =>
+        canEditCollege ? (
+          <Popconfirm
+            title="确认移除该学院？"
+            description="学院下有子项目时无法移除"
+            onConfirm={() => removeCollegeMutation.mutate(record.college_id)}
+          >
+            <Button type="link" size="small" danger>
+              移除
+            </Button>
+          </Popconfirm>
+        ) : (
+          <span style={{ color: '#9ca3af' }}>—</span>
+        ),
     },
   ]
 
@@ -297,14 +304,16 @@ export default function MajorDetailPage() {
         title={`参与学院（${colleges?.length ?? 0}）`}
         style={{ marginBottom: 16 }}
         extra={
-          <Button
-            type="primary"
-            size="small"
-            icon={<PlusOutlined />}
-            onClick={() => setAddCollegeOpen(true)}
-          >
-            添加学院
-          </Button>
+          canEditCollege && (
+            <Button
+              type="primary"
+              size="small"
+              icon={<PlusOutlined />}
+              onClick={() => setAddCollegeOpen(true)}
+            >
+              添加学院
+            </Button>
+          )
         }
       >
         <Table<MajorCollege>
