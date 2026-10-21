@@ -116,7 +116,7 @@ function ConfigPageInner() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <span style={{ color: '#8c8c8c', fontSize: 13 }}>共 {rows.length} 项</span>
+        <span style={{ color: '#6b7280', fontSize: 13 }}>共 {rows.length} 项</span>
       </Space>
 
       <Table rowKey="key" columns={columns} dataSource={rows} loading={isLoading} pagination={false} size="middle" />
@@ -132,11 +132,11 @@ function ConfigPageInner() {
         {editing && (
           <Space direction="vertical" style={{ width: '100%' }} size={16}>
             <div>
-              <div style={{ color: '#8c8c8c', marginBottom: 4 }}>参数键</div>
+              <div style={{ color: '#6b7280', marginBottom: 4 }}>参数键</div>
               <code style={{ fontSize: 14 }}>{editing.key}</code>
             </div>
             <div>
-              <div style={{ color: '#8c8c8c', marginBottom: 4 }}>参数值</div>
+              <div style={{ color: '#6b7280', marginBottom: 4 }}>参数值</div>
               {editing.value_type === 'NUMBER' || editing.value_type === 'INT' ? (
                 <InputNumber
                   style={{ width: '100%' }}
@@ -164,7 +164,7 @@ function ConfigPageInner() {
             </div>
             {editing.remark && (
               <div>
-                <div style={{ color: '#8c8c8c', marginBottom: 4 }}>说明</div>
+                <div style={{ color: '#6b7280', marginBottom: 4 }}>说明</div>
                 <div>{editing.remark}</div>
               </div>
             )}

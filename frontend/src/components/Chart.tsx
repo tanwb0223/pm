@@ -50,7 +50,7 @@ export default function Chart({ option, height = 280, loading, empty, emptyText 
       textStyle: {
         fontFamily:
           '-apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif',
-        color: '#23282f',
+        color: '#1f2937',
       },
       grid: { left: 12, right: 20, top: 30, bottom: 8, containLabel: true },
       tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
@@ -62,7 +62,7 @@ export default function Chart({ option, height = 280, loading, empty, emptyText 
   // 加载态
   useEffect(() => {
     if (!chartRef.current) return
-    if (loading) chartRef.current.showLoading('default', { text: '加载中', color: '#1e3a5f' })
+    if (loading) chartRef.current.showLoading('default', { text: '加载中', color: '#4f46e5' })
     else chartRef.current.hideLoading()
   }, [loading])
 
@@ -74,7 +74,7 @@ export default function Chart({ option, height = 280, loading, empty, emptyText 
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          color: '#bfbfbf',
+          color: '#d1d5db',
           fontSize: 13,
         }}
       >

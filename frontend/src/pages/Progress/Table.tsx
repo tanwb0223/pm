@@ -66,7 +66,7 @@ function ProgressPicker({
           disabled={disabled}
           style={{ width: 120 }}
         />
-        <span style={{ color: '#8c8c8c', fontSize: 12 }}>单位：%</span>
+        <span style={{ color: '#6b7280', fontSize: 12 }}>单位：%</span>
       </Space>
     </Space>
   )
@@ -233,7 +233,7 @@ export default function ProgressTablePage() {
             <br />~ {fmtDate(r.plan_end)}
           </span>
         ) : (
-          <span style={{ color: '#bfbfbf' }}>未设置</span>
+          <span style={{ color: '#9ca3af' }}>未设置</span>
         ),
     },
     {
@@ -241,7 +241,7 @@ export default function ProgressTablePage() {
       dataIndex: 'time_progress',
       width: 90,
       render: (v: number | null) =>
-        v === null ? <span style={{ color: '#bfbfbf' }}>—</span> : `${v}%`,
+        v === null ? <span style={{ color: '#9ca3af' }}>—</span> : `${v}%`,
     },
     {
       title: '实际进度',
@@ -254,7 +254,7 @@ export default function ProgressTablePage() {
             size="small"
             showInfo={false}
             style={{ width: 56, marginBottom: 0 }}
-            strokeColor={v >= 100 ? '#389e0d' : v >= 60 ? '#1e3a5f' : v >= 30 ? '#d48806' : '#cf1322'}
+            strokeColor={v >= 100 ? '#10b981' : v >= 60 ? '#4f46e5' : v >= 30 ? '#d48806' : '#ef4444'}
           />
           <span style={{ fontVariantNumeric: 'tabular-nums', minWidth: 32, textAlign: 'right' }}>
             {v}%
@@ -307,7 +307,7 @@ export default function ProgressTablePage() {
         subtitle="默认按偏差从低到高排序，最滞前的排在前面；黄色预警不进待办"
         extra={
           <Space>
-            <span style={{ color: '#595959' }}>只看异常</span>
+            <span style={{ color: '#4b5563' }}>只看异常</span>
             <Switch
               checked={filters.only_abnormal}
               onChange={(v) => patchFilters({ only_abnormal: v })}
@@ -426,7 +426,7 @@ export default function ProgressTablePage() {
           <div style={{ marginBottom: 12 }}>
             当前进度：<b>{fillSub?.current_progress ?? 0}%</b>
             {fillSub?.time_progress != null && (
-              <span style={{ color: '#8c8c8c' }}>
+              <span style={{ color: '#6b7280' }}>
                 　时间进度 {fillSub.time_progress}%　偏差{' '}
                 <DeviationText value={fillSub?.deviation ?? null} />
               </span>

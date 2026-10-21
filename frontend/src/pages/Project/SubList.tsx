@@ -522,17 +522,17 @@ export default function SubListPage() {
           {editing && (
             <div
               style={{
-                background: '#f7f9fc',
-                border: '1px solid #e8eef4',
+                background: '#f5f7ff',
+                border: '1px solid #f3f4f6',
                 borderRadius: 4,
                 padding: '8px 12px',
                 fontSize: 13,
-                color: '#595959',
+                color: '#4b5563',
               }}
             >
               当前进度：{editing.current_progress}%
               {editing.status === 'CLOSED' && (
-                <span style={{ color: '#8c8c8c', marginLeft: 8 }}>（已结项，终态不可再变更）</span>
+                <span style={{ color: '#6b7280', marginLeft: 8 }}>（已结项，终态不可再变更）</span>
               )}
             </div>
           )}

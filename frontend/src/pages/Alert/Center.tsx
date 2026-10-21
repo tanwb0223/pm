@@ -180,7 +180,7 @@ export default function AlertCenterPage() {
             <Badge count={v} size="small" color="orange" />
           </Tooltip>
         ) : (
-          <span style={{ color: '#d9d9d9' }}>—</span>
+          <span style={{ color: '#e5e7eb' }}>—</span>
         ),
     },
     {
@@ -247,7 +247,7 @@ export default function AlertCenterPage() {
               </>
             )}
             {(r.status === 'CLOSED' || r.status === 'IGNORED') && (
-              <span style={{ color: '#bfbfbf' }}>{r.close_reason ?? '—'}</span>
+              <span style={{ color: '#9ca3af' }}>{r.close_reason ?? '—'}</span>
             )}
           </Space>
         )
@@ -262,13 +262,13 @@ export default function AlertCenterPage() {
       title: '红色',
       dataIndex: 'red',
       width: 70,
-      render: (v: number) => (v ? <b style={{ color: '#cf1322' }}>{v}</b> : '—'),
+      render: (v: number) => (v ? <b style={{ color: '#ef4444' }}>{v}</b> : '—'),
     },
     {
       title: '橙色',
       dataIndex: 'orange',
       width: 70,
-      render: (v: number) => (v ? <b style={{ color: '#d46b08' }}>{v}</b> : '—'),
+      render: (v: number) => (v ? <b style={{ color: '#f59e0b' }}>{v}</b> : '—'),
     },
     { title: '黄色', dataIndex: 'yellow', width: 70, render: (v: number) => v || '—' },
     { title: '合计', dataIndex: 'total', width: 70, render: (v: number) => <b>{v}</b> },

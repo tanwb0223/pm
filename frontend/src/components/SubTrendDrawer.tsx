@@ -39,8 +39,8 @@ export default function SubTrendDrawer({ subId, subName, open, onClose }: Props)
         type: 'line',
         smooth: true,
         symbol: 'none',
-        lineStyle: { width: 2, type: 'dashed', color: '#8c8c8c' },
-        itemStyle: { color: '#8c8c8c' },
+        lineStyle: { width: 2, type: 'dashed', color: '#9ca3af' },
+        itemStyle: { color: '#9ca3af' },
         data: points.map((p) => p.expected),
         connectNulls: false,
       },
@@ -53,9 +53,9 @@ export default function SubTrendDrawer({ subId, subName, open, onClose }: Props)
         symbol: 'circle',
         symbolSize: 5,
         showSymbol: false,
-        lineStyle: { width: 3, color: '#1e3a5f' },
-        itemStyle: { color: '#1e3a5f' },
-        areaStyle: { opacity: 0.18, color: '#1e3a5f' },
+        lineStyle: { width: 3, color: '#4f46e5' },
+        itemStyle: { color: '#4f46e5' },
+        areaStyle: { opacity: 0.18, color: '#4f46e5' },
         data: points.map((p) => p.actual),
         connectNulls: true,
         z: 5,
@@ -69,7 +69,7 @@ export default function SubTrendDrawer({ subId, subName, open, onClose }: Props)
         ;(series[1] as { markPoint?: unknown }).markPoint = {
           symbol: 'pin',
           symbolSize: 46,
-          itemStyle: { color: '#cf1322' },
+          itemStyle: { color: '#ef4444' },
           label: { fontSize: 10, color: '#fff', formatter: '开始滞后' },
           data: [{ coord: [dates[idx], points[idx].actual], value: '滞后' }],
         }
@@ -90,10 +90,10 @@ export default function SubTrendDrawer({ subId, subName, open, onClose }: Props)
             `实际进度：${p.actual ?? '未填报'}%`,
           ]
           if (p.deviation !== null) {
-            const color = p.deviation < -25 ? '#cf1322' : p.deviation < -10 ? '#d46b08' : '#389e0d'
+            const color = p.deviation < -25 ? '#ef4444' : p.deviation < -10 ? '#f59e0b' : '#10b981'
             lines.push(`偏差：<span style="color:${color};font-weight:600">${p.deviation > 0 ? '+' : ''}${p.deviation}</span>`)
           }
-          if (p.is_free_day) lines.push('<span style="color:#8c8c8c">（免填日）</span>')
+          if (p.is_free_day) lines.push('<span style="color:#9ca3af">（免填日）</span>')
           return lines.join('<br/>')
         },
       },
@@ -103,9 +103,9 @@ export default function SubTrendDrawer({ subId, subName, open, onClose }: Props)
         type: 'category',
         boundaryGap: false,
         data: dates,
-        axisLine: { lineStyle: { color: '#d9d9d9' } },
+        axisLine: { lineStyle: { color: '#e5e7eb' } },
         axisLabel: {
-          color: '#8c8c8c',
+          color: '#9ca3af',
           fontSize: 11,
           interval: Math.max(0, Math.ceil(dates.length / 10) - 1),
         },
@@ -114,8 +114,8 @@ export default function SubTrendDrawer({ subId, subName, open, onClose }: Props)
         type: 'value',
         min: -3,
         max: 100,
-        axisLabel: { color: '#8c8c8c', fontSize: 11, formatter: '{value}%' },
-        splitLine: { lineStyle: { color: '#f0f0f0' } },
+        axisLabel: { color: '#9ca3af', fontSize: 11, formatter: '{value}%' },
+        splitLine: { lineStyle: { color: '#f3f4f6' } },
       },
       series,
     }
@@ -166,7 +166,7 @@ export default function SubTrendDrawer({ subId, subName, open, onClose }: Props)
                   <Tag color="orange">{data.lag_days} 天</Tag>
                 </Tooltip>
               ) : (
-                <span style={{ color: '#8c8c8c' }}>—</span>
+                <span style={{ color: '#9ca3af' }}>—</span>
               )}
             </Descriptions.Item>
           </Descriptions>
@@ -183,7 +183,7 @@ export default function SubTrendDrawer({ subId, subName, open, onClose }: Props)
 
           <Chart option={option} height={380} />
 
-          <div style={{ color: '#8c8c8c', fontSize: 12, lineHeight: 1.8 }}>
+          <div style={{ color: '#9ca3af', fontSize: 12, lineHeight: 1.8 }}>
             说明：虚线是「按时间算现在应该做到多少」，实线是「实际填了多少」。
             两条线的距离就是偏差，实线开始落后于虚线的位置就是变慢的起点。
             滞后判定口径与预警 AL-01 一致（偏差低于 −10%）。

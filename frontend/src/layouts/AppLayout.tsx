@@ -9,6 +9,7 @@ import {
   CalendarOutlined,
   DashboardOutlined,
   DatabaseOutlined,
+  DownOutlined,
   FileTextOutlined,
   LogoutOutlined,
   MenuFoldOutlined,
@@ -17,6 +18,7 @@ import {
   SafetyOutlined,
   SettingOutlined,
   TeamOutlined,
+  ThunderboltFilled,
   WarningOutlined,
 } from '@ant-design/icons'
 import { Avatar, Badge, Button, Dropdown, Layout, Menu, Space, Tag, Typography } from 'antd'
@@ -70,7 +72,7 @@ export default function AppLayout() {
   // 权限判定：useCan() 内部订阅 user，刷新后 me 回来会触发重渲染
   const can = useCan()
 
-  // 系统管理二级菜单（按权限过滤：只挂了 system:org 的账号不应看到用户管理、参数配置）
+  // 系统管理二级菜单（按权限过滤）
   const systemChildren = useMemo(() => {
     const list: { key: string; label: string; icon?: JSX.Element }[] = []
     if (can('system:org')) {
@@ -101,7 +103,7 @@ export default function AppLayout() {
         key: '/dashboard',
         icon: <DashboardOutlined />,
         label: (
-          <Space>
+          <Space size={6}>
             我的督办
             {todo && todo.pending_alerts > 0 && (
               <Badge count={todo.pending_alerts} size="small" />
@@ -131,10 +133,10 @@ export default function AppLayout() {
         key: '/alert/center',
         icon: <AlertOutlined />,
         label: (
-          <Space>
+          <Space size={6}>
             预警中心
             {todo && todo.pending_alerts > 0 && (
-              <Badge count={todo.pending_alerts} size="small" color="red" />
+              <Badge count={todo.pending_alerts} size="small" color="#ef4444" />
             )}
           </Space>
         ),
@@ -146,7 +148,6 @@ export default function AppLayout() {
     if (can('risk:list')) {
       items.push({ key: '/risk/list', icon: <WarningOutlined />, label: '风险登记' })
     }
-    // 只要有任何系统管理子菜单，就显示一级菜单
     if (systemChildren.length > 0) {
       items.push({ key: 'system', icon: <SettingOutlined />, label: '系统管理' } as never)
     }
@@ -184,31 +185,31 @@ export default function AppLayout() {
 
   return (
     <Layout style={{ height: '100vh' }}>
-      <Header
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '0 20px',
-          height: 56,
-          lineHeight: '56px',
-        }}
-      >
-        <Space size={12}>
+      <Header className="app-header">
+        <Space size={14}>
           <Button
             type="text"
             icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
             onClick={() => setCollapsed(!collapsed)}
-            style={{ color: '#fff' }}
+            style={{ color: '#6b7280' }}
           />
-          <Text style={{ color: '#fff', fontSize: 17, fontWeight: 600, letterSpacing: 1 }}>
-            产教融合项目管理系统
-          </Text>
+          <div className="app-brand">
+            <div className="app-logo">
+              <ThunderboltFilled />
+            </div>
+            <span className="app-title">产教融合项目管理系统</span>
+          </div>
         </Space>
-        <Space size={16}>
+
+        <Space size={14}>
           {todo && todo.pending_alerts > 0 && (
             <Link to="/alert/center">
-              <Tag color="red">待处置预警 {todo.pending_alerts}</Tag>
+              <Tag
+                color="error"
+                style={{ margin: 0, padding: '2px 10px', fontWeight: 600, fontSize: 12.5 }}
+              >
+                待处置预警 {todo.pending_alerts}
+              </Tag>
             </Link>
           )}
           <Dropdown
@@ -226,12 +227,15 @@ export default function AppLayout() {
               ],
             }}
           >
-            <Space style={{ cursor: 'pointer', color: '#fff' }}>
-              <Avatar size="small" style={{ background: '#4a7ba7' }}>
+            <div className="header-user">
+              <Avatar size={28} className="header-avatar">
                 {user?.name?.[0] ?? 'U'}
               </Avatar>
-              <Text style={{ color: '#fff' }}>{user?.name ?? '加载中'}</Text>
-            </Space>
+              <Text style={{ color: '#374151', fontSize: 13.5, fontWeight: 500 }}>
+                {user?.name ?? '加载中'}
+              </Text>
+              <DownOutlined style={{ fontSize: 10, color: '#9ca3af' }} />
+            </div>
           </Dropdown>
         </Space>
       </Header>
@@ -239,9 +243,9 @@ export default function AppLayout() {
       <Layout>
         <Sider
           collapsed={collapsed}
-          width={208}
+          width={212}
           theme="light"
-          style={{ borderRight: '1px solid #e8eef4', overflow: 'auto' }}
+          style={{ overflow: 'auto', background: '#fff' }}
         >
           <Menu
             mode="inline"
@@ -251,11 +255,11 @@ export default function AppLayout() {
             onClick={({ key }) => {
               if (key.startsWith('/')) navigate(key)
             }}
-            style={{ border: 'none', paddingTop: 8 }}
+            style={{ border: 'none', paddingTop: 10, paddingBottom: 16 }}
           />
         </Sider>
 
-        <Content style={{ overflow: 'auto', background: '#f5f7fa' }}>
+        <Content style={{ overflow: 'auto', background: '#f8fafc' }}>
           <Outlet />
         </Content>
       </Layout>

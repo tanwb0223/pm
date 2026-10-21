@@ -219,7 +219,7 @@ export default function AttachmentPanel({ bizType, bizId, readOnly = false }: Pr
           style={{ padding: '12px 0' }}
         >
           <p className="ant-upload-drag-icon" style={{ marginBottom: 4 }}>
-            <InboxOutlined style={{ fontSize: 28, color: '#1e3a5f' }} />
+            <InboxOutlined style={{ fontSize: 28, color: '#4f46e5' }} />
           </p>
           <p className="ant-upload-text" style={{ fontSize: 13 }}>
             点击或拖拽文件到此处上传
@@ -240,7 +240,7 @@ export default function AttachmentPanel({ bizType, bizId, readOnly = false }: Pr
         locale={{
           emptyText: (
             <Empty
-              image={<PaperClipOutlined style={{ fontSize: 32, color: '#d9d9d9' }} />}
+              image={<PaperClipOutlined style={{ fontSize: 32, color: '#d1d5db' }} />}
               imageStyle={{ height: 40 }}
               description="暂无附件"
             />
@@ -249,7 +249,7 @@ export default function AttachmentPanel({ bizType, bizId, readOnly = false }: Pr
       />
 
       {stats && (
-        <div style={{ color: '#8c8c8c', fontSize: 12 }}>
+        <div style={{ color: '#9ca3af', fontSize: 12 }}>
           共 {stats.count} 个文件，占用 {stats.size_mb} MB ｜ 磁盘剩余{' '}
           {Math.round(stats.disk_free_mb / 1024)} GB
           {stats.disk_free_mb < 1024 && (

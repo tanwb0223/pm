@@ -117,7 +117,7 @@ function AuthProviderPageInner() {
             <Col key={p.kind} xs={24} md={8}>
               <div
                 style={{
-                  border: '1px solid #e8eef4',
+                  border: '1px solid #f3f4f6',
                   borderRadius: 8,
                   padding: 16,
                   background: '#fff',
@@ -125,10 +125,10 @@ function AuthProviderPageInner() {
               >
                 <Space style={{ justifyContent: 'space-between', width: '100%' }}>
                   <Space size={8}>
-                    <span style={{ fontSize: 20, color: '#1e3a5f' }}>{meta.icon}</span>
+                    <span style={{ fontSize: 20, color: '#4f46e5' }}>{meta.icon}</span>
                     <div>
                       <div style={{ fontWeight: 600 }}>{p.display_name || p.kind}</div>
-                      <code style={{ fontSize: 12, color: '#8c8c8c' }}>{p.kind}</code>
+                      <code style={{ fontSize: 12, color: '#6b7280' }}>{p.kind}</code>
                     </div>
                   </Space>
                   {canWrite && (
@@ -141,7 +141,7 @@ function AuthProviderPageInner() {
                   )}
                 </Space>
 
-                <div style={{ color: '#8c8c8c', fontSize: 13, margin: '10px 0' }}>{meta.desc}</div>
+                <div style={{ color: '#6b7280', fontSize: 13, margin: '10px 0' }}>{meta.desc}</div>
 
                 <Space wrap size={4} style={{ marginBottom: 12 }}>
                   {p.configured ? (
@@ -269,7 +269,7 @@ function ConfigDrawer({
 
   const E = ({ k, label, placeholder }: { k: string; label: string; placeholder?: string }) => (
     <div style={{ marginBottom: 12 }}>
-      <div style={{ color: '#8c8c8c', marginBottom: 4 }}>{label}</div>
+      <div style={{ color: '#6b7280', marginBottom: 4 }}>{label}</div>
       <Input
         value={extra[k] ?? ''}
         placeholder={placeholder}
@@ -294,13 +294,13 @@ function ConfigDrawer({
       destroyOnHidden
     >
       <div style={{ marginBottom: 16 }}>
-        <div style={{ color: '#8c8c8c', marginBottom: 4 }}>显示名称</div>
+        <div style={{ color: '#6b7280', marginBottom: 4 }}>显示名称</div>
         <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
       </div>
 
       {(kind === 'oidc' || kind === 'oauth2' || kind === 'feishu' || kind === 'dingtalk' || kind === 'wecom') && (
         <div style={{ marginBottom: 12 }}>
-          <div style={{ color: '#8c8c8c', marginBottom: 4 }}>
+          <div style={{ color: '#6b7280', marginBottom: 4 }}>
             Client ID{kind === 'wecom' ? '（企业 ID corp_id）' : ''}
           </div>
           <Input value={clientId} onChange={(e) => setClientId(e.target.value)} />
@@ -309,7 +309,7 @@ function ConfigDrawer({
 
       {(kind === 'feishu' || kind === 'dingtalk' || kind === 'wecom' || kind === 'oidc' || kind === 'oauth2') && (
         <div style={{ marginBottom: 12 }}>
-          <div style={{ color: '#8c8c8c', marginBottom: 4 }}>Client Secret</div>
+          <div style={{ color: '#6b7280', marginBottom: 4 }}>Client Secret</div>
           <Input.Password
             value={secret}
             placeholder={provider.has_client_secret ? '已保存，留空不修改' : '请输入'}
@@ -322,13 +322,13 @@ function ConfigDrawer({
       {kind === 'oidc' && (
         <>
           <div style={{ marginBottom: 12 }}>
-            <div style={{ color: '#8c8c8c', marginBottom: 4 }}>
+            <div style={{ color: '#6b7280', marginBottom: 4 }}>
               Issuer（如 https://sso.school.edu.cn，自动读取 /.well-known/openid-configuration）
             </div>
             <Input value={issuer} onChange={(e) => setIssuer(e.target.value)} />
           </div>
           <div style={{ marginBottom: 12 }}>
-            <div style={{ color: '#8c8c8c', marginBottom: 4 }}>Scopes</div>
+            <div style={{ color: '#6b7280', marginBottom: 4 }}>Scopes</div>
             <Input value={scopes} placeholder="openid profile email" onChange={(e) => setScopes(e.target.value)} />
           </div>
         </>
@@ -341,7 +341,7 @@ function ConfigDrawer({
           <E k="userinfo_url" label="用户信息地址 userinfo_url" />
           <E k="user_id_field" label="用户标识字段（可选，默认 sub）" />
           <div style={{ marginBottom: 12 }}>
-            <div style={{ color: '#8c8c8c', marginBottom: 4 }}>Scopes</div>
+            <div style={{ color: '#6b7280', marginBottom: 4 }}>Scopes</div>
             <Input value={scopes} onChange={(e) => setScopes(e.target.value)} />
           </div>
         </>
@@ -349,7 +349,7 @@ function ConfigDrawer({
 
       {(kind === 'cas' || kind === 'ldap') && (
         <div style={{ marginBottom: 12 }}>
-          <div style={{ color: '#8c8c8c', marginBottom: 4 }}>
+          <div style={{ color: '#6b7280', marginBottom: 4 }}>
             {kind === 'cas' ? 'CAS 服务地址（如 https://sso.school.edu.cn/cas）' : 'LDAP 地址（如 ldaps://ad.school.edu.cn）'}
           </div>
           <Input value={serverUrl} onChange={(e) => setServerUrl(e.target.value)} />
@@ -416,7 +416,7 @@ function ConfigDrawer({
           复制
         </Button>
       </Space.Compact>
-      <div style={{ color: '#8c8c8c', fontSize: 12, marginTop: 4 }}>
+      <div style={{ color: '#6b7280', fontSize: 12, marginTop: 4 }}>
         在第三方平台配置回调时使用此地址
       </div>
     </Drawer>

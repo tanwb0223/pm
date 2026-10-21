@@ -124,7 +124,7 @@ export default function ReportListPage() {
             <Badge count={v} color="blue" />
           </Tooltip>
         ) : (
-          <span style={{ color: '#bfbfbf' }}>0</span>
+          <span style={{ color: '#9ca3af' }}>0</span>
         ),
     },
     {

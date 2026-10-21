@@ -42,14 +42,14 @@ export default function CollegeComparePage() {
       grid: { left: 8, right: 40, top: 16, bottom: 8, containLabel: true },
       xAxis: {
         type: 'value',
-        axisLabel: { color: '#8c8c8c', fontSize: 11 },
-        splitLine: { lineStyle: { color: '#f0f0f0' } },
+        axisLabel: { color: '#6b7280', fontSize: 11 },
+        splitLine: { lineStyle: { color: '#f3f4f6' } },
       },
       yAxis: {
         type: 'category',
         data: rows.map((r) => r.college_name),
-        axisLine: { lineStyle: { color: '#d9d9d9' } },
-        axisLabel: { color: '#595959', fontSize: 12 },
+        axisLine: { lineStyle: { color: '#e5e7eb' } },
+        axisLabel: { color: '#4b5563', fontSize: 12 },
       },
       series: [
         {
@@ -66,7 +66,7 @@ export default function CollegeComparePage() {
             show: true,
             position: 'right',
             fontSize: 11,
-            color: '#595959',
+            color: '#4b5563',
             formatter: (p: unknown) => {
               const v = (p as { value: number }).value
               return `${v > 0 ? '+' : ''}${v}`
@@ -75,8 +75,8 @@ export default function CollegeComparePage() {
           markLine: {
             silent: true,
             symbol: 'none',
-            lineStyle: { color: '#cf1322', type: 'dashed', width: 1 },
-            label: { formatter: '滞后线 -10', fontSize: 10, color: '#cf1322' },
+            lineStyle: { color: '#ef4444', type: 'dashed', width: 1 },
+            label: { formatter: '滞后线 -10', fontSize: 10, color: '#ef4444' },
             data: [{ xAxis: -10 }],
           },
         },
@@ -94,14 +94,14 @@ export default function CollegeComparePage() {
       xAxis: {
         type: 'category',
         data: rows.map((r) => r.college_name),
-        axisLabel: { color: '#8c8c8c', fontSize: 10, interval: 0, rotate: rows.length > 4 ? 20 : 0 },
-        axisLine: { lineStyle: { color: '#d9d9d9' } },
+        axisLabel: { color: '#6b7280', fontSize: 10, interval: 0, rotate: rows.length > 4 ? 20 : 0 },
+        axisLine: { lineStyle: { color: '#e5e7eb' } },
       },
       yAxis: {
         type: 'value',
         minInterval: 1,
-        axisLabel: { color: '#8c8c8c', fontSize: 11 },
-        splitLine: { lineStyle: { color: '#f0f0f0' } },
+        axisLabel: { color: '#6b7280', fontSize: 11 },
+        splitLine: { lineStyle: { color: '#f3f4f6' } },
       },
       series: [
         {
@@ -110,7 +110,7 @@ export default function CollegeComparePage() {
           barMaxWidth: 24,
           stack: 'lag',
           data: rows.map((r) => r.lagging_count),
-          itemStyle: { color: '#d46b08' },
+          itemStyle: { color: '#f59e0b' },
         },
         {
           name: '严重滞后',
@@ -118,7 +118,7 @@ export default function CollegeComparePage() {
           barMaxWidth: 24,
           stack: 'lag',
           data: rows.map((r) => r.severe_count),
-          itemStyle: { color: '#cf1322' },
+          itemStyle: { color: '#ef4444' },
         },
       ],
     }
@@ -139,7 +139,7 @@ export default function CollegeComparePage() {
       sorter: (a, b) => (a.avg_deviation ?? 0) - (b.avg_deviation ?? 0),
       render: (v: number | null) =>
         v === null ? (
-          <span style={{ color: '#bfbfbf' }}>—</span>
+          <span style={{ color: '#9ca3af' }}>—</span>
         ) : (
           <span style={{ color: deviationColor(v), fontWeight: Math.abs(v) >= 10 ? 600 : 400 }}>
             {v > 0 ? `+${v}` : v}
@@ -153,7 +153,7 @@ export default function CollegeComparePage() {
       align: 'center',
       sorter: (a, b) => a.lagging_count - b.lagging_count,
       render: (v: number) =>
-        v > 0 ? <Tag color="orange">{v} 个</Tag> : <span style={{ color: '#bfbfbf' }}>0</span>,
+        v > 0 ? <Tag color="orange">{v} 个</Tag> : <span style={{ color: '#9ca3af' }}>0</span>,
     },
     {
       title: '严重滞后',
@@ -161,20 +161,20 @@ export default function CollegeComparePage() {
       width: 110,
       align: 'center',
       render: (v: number) =>
-        v > 0 ? <Tag color="red">{v} 个</Tag> : <span style={{ color: '#bfbfbf' }}>0</span>,
+        v > 0 ? <Tag color="red">{v} 个</Tag> : <span style={{ color: '#9ca3af' }}>0</span>,
     },
     {
       title: '更新及时率',
       dataIndex: 'update_rate',
       width: 180,
       render: (v: number | null) => {
-        if (v === null) return <span style={{ color: '#bfbfbf' }}>—</span>
+        if (v === null) return <span style={{ color: '#9ca3af' }}>—</span>
         return (
           <Tooltip title="21 个有效日内更新过的子项目占比">
             <Progress
               percent={v}
               size="small"
-              strokeColor={v >= 90 ? '#389e0d' : v >= 70 ? '#d46b08' : '#cf1322'}
+              strokeColor={v >= 90 ? '#10b981' : v >= 70 ? '#f59e0b' : '#ef4444'}
             />
           </Tooltip>
         )
@@ -205,46 +205,42 @@ export default function CollegeComparePage() {
         }
       />
 
-      <Row gutter={16} style={{ marginBottom: 16 }}>
-        <Col span={6}>
-          <Card size="small">
-            <div className="stat-card">
-              <div className="stat-number" style={{ color: '#1e3a5f' }}>
-                {data.length}
-              </div>
-              <div className="stat-label">参与学院</div>
+      <Row gutter={16} style={{ marginBottom: 20 }}>
+        <Col xs={12} xl={6}>
+          <div className="metric-card">
+            <div className="metric-label">参与学院</div>
+            <div className="metric-value" style={{ color: '#4f46e5' }}>
+              {data.length}
+              <span className="metric-suffix">个</span>
             </div>
-          </Card>
+          </div>
         </Col>
-        <Col span={6}>
-          <Card size="small">
-            <div className="stat-card">
-              <div className="stat-number" style={{ color: '#d46b08' }}>
-                {lagTotal}
-              </div>
-              <div className="stat-label">滞后子项目</div>
+        <Col xs={12} xl={6}>
+          <div className="metric-card">
+            <div className="metric-label">子项目总数</div>
+            <div className="metric-value">
+              {data.reduce((s, r) => s + (r.total_subs ?? 0), 0)}
+              <span className="metric-suffix">个</span>
             </div>
-          </Card>
+          </div>
         </Col>
-        <Col span={6}>
-          <Card size="small">
-            <div className="stat-card">
-              <div className="stat-number" style={{ color: '#cf1322' }}>
-                {severeTotal}
-              </div>
-              <div className="stat-label">严重滞后</div>
+        <Col xs={12} xl={6}>
+          <div className="metric-card is-warning">
+            <div className="metric-label">滞后子项目</div>
+            <div className="metric-value is-warning">
+              {data.reduce((s, r) => s + (r.lagging_count ?? 0), 0)}
+              <span className="metric-suffix">个</span>
             </div>
-          </Card>
+          </div>
         </Col>
-        <Col span={6}>
-          <Card size="small">
-            <div className="stat-card">
-              <div className="stat-number" style={{ color: worst?.avg_deviation != null && worst.avg_deviation < -10 ? '#cf1322' : '#389e0d', fontSize: 20 }}>
-                {worst?.avg_deviation != null ? `${worst.avg_deviation > 0 ? '+' : ''}${worst.avg_deviation}` : '—'}
-              </div>
-              <div className="stat-label">最滞后学院（{worst?.college_name ?? '—'}）</div>
+        <Col xs={12} xl={6}>
+          <div className="metric-card is-danger">
+            <div className="metric-label">严重滞后</div>
+            <div className="metric-value is-danger">
+              {data.reduce((s, r) => s + (r.severe_count ?? 0), 0)}
+              <span className="metric-suffix">个</span>
             </div>
-          </Card>
+          </div>
         </Col>
       </Row>
 
@@ -283,7 +279,7 @@ export default function CollegeComparePage() {
         />
       </Card>
 
-      <div style={{ color: '#8c8c8c', fontSize: 12, marginTop: 12, lineHeight: 1.8 }}>
+      <div style={{ color: '#6b7280', fontSize: 12, marginTop: 12, lineHeight: 1.8 }}>
         口径说明：平均偏差为该学院所有非中止子项目偏差的简单平均（未按权重折算）；
         滞后指偏差低于 −10%，严重滞后指偏差低于或等于 −25%，与预警 AL-01 / AL-02 一致；
         更新及时率指 21 个有效日内更新过的子项目占比。

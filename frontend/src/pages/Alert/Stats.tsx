@@ -15,16 +15,16 @@ const DAYS_OPTIONS = [
 ]
 
 const LEVEL_COLOR: Record<string, string> = {
-  RED: '#cf1322',
-  ORANGE: '#d46b08',
-  YELLOW: '#d4b106',
+  RED: '#ef4444',
+  ORANGE: '#f59e0b',
+  YELLOW: '#eab308',
 }
 
 const STATUS_COLOR: Record<string, string> = {
-  PENDING: '#cf1322',
-  CLAIMED: '#1e3a5f',
-  CLOSED: '#389e0d',
-  IGNORED: '#bfbfbf',
+  PENDING: '#ef4444',
+  CLAIMED: '#4f46e5',
+  CLOSED: '#10b981',
+  IGNORED: '#9ca3af',
 }
 
 export default function AlertStatsPage() {
@@ -45,10 +45,10 @@ export default function AlertStatsPage() {
       xAxis: {
         type: 'category',
         data: trend.map((t) => t.date.slice(5)),
-        axisLine: { lineStyle: { color: '#d9d9d9' } },
+        axisLine: { lineStyle: { color: '#e5e7eb' } },
         // 标签数量 = 数据点，超过 14 个则按比例抽稀
         axisLabel: {
-          color: '#8c8c8c',
+          color: '#6b7280',
           fontSize: 11,
           interval: Math.max(0, Math.ceil(trend.length / 12) - 1),
           rotate: 0,
@@ -57,8 +57,8 @@ export default function AlertStatsPage() {
       yAxis: {
         type: 'value',
         minInterval: 1,
-        splitLine: { lineStyle: { color: '#f0f0f0' } },
-        axisLabel: { color: '#8c8c8c', fontSize: 11 },
+        splitLine: { lineStyle: { color: '#f3f4f6' } },
+        axisLabel: { color: '#6b7280', fontSize: 11 },
       },
       series: [
         {
@@ -129,22 +129,22 @@ export default function AlertStatsPage() {
       xAxis: {
         type: 'value',
         minInterval: 1,
-        splitLine: { lineStyle: { color: '#f0f0f0' } },
-        axisLabel: { color: '#8c8c8c', fontSize: 11 },
+        splitLine: { lineStyle: { color: '#f3f4f6' } },
+        axisLabel: { color: '#6b7280', fontSize: 11 },
       },
       yAxis: {
         type: 'category',
         data: entries.map((e) => e.name),
-        axisLine: { lineStyle: { color: '#d9d9d9' } },
-        axisLabel: { color: '#595959', fontSize: 11 },
+        axisLine: { lineStyle: { color: '#e5e7eb' } },
+        axisLabel: { color: '#4b5563', fontSize: 11 },
       },
       series: [
         {
           type: 'bar',
           barMaxWidth: 16,
           data: entries.map((e) => e.value),
-          itemStyle: { color: '#1e3a5f', borderRadius: [0, 3, 3, 0] },
-          label: { show: true, position: 'right', fontSize: 11, color: '#595959' },
+          itemStyle: { color: '#4f46e5', borderRadius: [0, 3, 3, 0] },
+          label: { show: true, position: 'right', fontSize: 11, color: '#4b5563' },
         },
       ],
     }
@@ -162,14 +162,14 @@ export default function AlertStatsPage() {
         data: rows.map((r) =>
           r.major_name.length > 10 ? `${r.major_name.slice(0, 10)}…` : r.major_name,
         ),
-        axisLabel: { color: '#8c8c8c', fontSize: 10, interval: 0, rotate: rows.length > 4 ? 18 : 0 },
-        axisLine: { lineStyle: { color: '#d9d9d9' } },
+        axisLabel: { color: '#6b7280', fontSize: 10, interval: 0, rotate: rows.length > 4 ? 18 : 0 },
+        axisLine: { lineStyle: { color: '#e5e7eb' } },
       },
       yAxis: {
         type: 'value',
         minInterval: 1,
-        splitLine: { lineStyle: { color: '#f0f0f0' } },
-        axisLabel: { color: '#8c8c8c', fontSize: 11 },
+        splitLine: { lineStyle: { color: '#f3f4f6' } },
+        axisLabel: { color: '#6b7280', fontSize: 11 },
       },
       series: [
         {
@@ -177,7 +177,7 @@ export default function AlertStatsPage() {
           type: 'bar',
           barMaxWidth: 26,
           data: rows.map((r) => r.total),
-          itemStyle: { color: '#4a7ba7', borderRadius: [3, 3, 0, 0] },
+          itemStyle: { color: '#8b5cf6', borderRadius: [3, 3, 0, 0] },
         },
         {
           name: '其中红色',
@@ -195,10 +195,10 @@ export default function AlertStatsPage() {
     const buckets = data?.age_buckets ?? {}
     const order = ['1天内', '1-3天', '3-7天', '7天以上']
     const colorMap: Record<string, string> = {
-      '1天内': '#389e0d',
-      '1-3天': '#d4b106',
-      '3-7天': '#d46b08',
-      '7天以上': '#cf1322',
+      '1天内': '#10b981',
+      '1-3天': '#eab308',
+      '3-7天': '#f59e0b',
+      '7天以上': '#ef4444',
     }
     return {
       tooltip: { trigger: 'item', formatter: '{b}: {c} 条 ({d}%)' },
@@ -209,7 +209,7 @@ export default function AlertStatsPage() {
           radius: '62%',
           center: ['50%', '44%'],
           itemStyle: { borderColor: '#fff', borderWidth: 2 },
-          label: { fontSize: 11, color: '#595959', formatter: '{b}\n{c} 条' },
+          label: { fontSize: 11, color: '#4b5563', formatter: '{b}\n{c} 条' },
           data: order
             .map((k) => ({
               name: k,
@@ -224,7 +224,7 @@ export default function AlertStatsPage() {
 
   const rate = data?.on_time_rate
   const rateColor =
-    rate == null ? '#8c8c8c' : rate >= 90 ? '#389e0d' : rate >= 70 ? '#d46b08' : '#cf1322'
+    rate == null ? '#6b7280' : rate >= 90 ? '#10b981' : rate >= 70 ? '#f59e0b' : '#ef4444'
   const total = data?.total ?? 0
   const trendEmpty = !data?.trend?.some((t) => t.total > 0)
   const ageEmpty = !Object.values(data?.age_buckets ?? {}).some((v) => v > 0)
@@ -269,7 +269,7 @@ export default function AlertStatsPage() {
             <Statistic
               title="按期关闭数"
               value={data?.on_time_closed ?? 0}
-              valueStyle={{ color: '#389e0d' }}
+              valueStyle={{ color: '#10b981' }}
               loading={isLoading}
             />
           </Card>

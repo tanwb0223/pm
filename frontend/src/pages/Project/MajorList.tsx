@@ -404,16 +404,16 @@ export default function MajorListPage() {
           {editing && (
             <div
               style={{
-                background: '#f7f9fc',
-                border: '1px solid #e8eef4',
+                background: '#f5f7ff',
+                border: '1px solid #f3f4f6',
                 borderRadius: 4,
                 padding: '8px 12px',
                 fontSize: 13,
-                color: '#595959',
+                color: '#4b5563',
               }}
             >
               原始计划：{fmtDate(editing.original_start)} ~ {fmtDate(editing.original_end)}
-              <span style={{ color: '#8c8c8c', marginLeft: 8 }}>（立项时锁定，变更需走变更登记）</span>
+              <span style={{ color: '#6b7280', marginLeft: 8 }}>（立项时锁定，变更需走变更登记）</span>
             </div>
           )}
         </Form>
@@ -435,7 +435,7 @@ export default function MajorListPage() {
         okButtonProps={{ disabled: pickedFields.length === 0 }}
         width={560}
       >
-        <div style={{ marginBottom: 12, color: '#8c8c8c', fontSize: 13 }}>
+        <div style={{ marginBottom: 12, color: '#6b7280', fontSize: 13 }}>
           勾选需要导出的列；当前筛选条件（关键词/类型/状态）会一并生效。
         </div>
         <div style={{ marginBottom: 12 }}>
@@ -446,7 +446,7 @@ export default function MajorListPage() {
             <Button size="small" onClick={() => setPickedFields([])}>
               清空
             </Button>
-            <span style={{ color: '#8c8c8c', fontSize: 12 }}>
+            <span style={{ color: '#6b7280', fontSize: 12 }}>
               已选 {pickedFields.length} / {fieldDefs?.major.length ?? 0} 项
             </span>
           </Space>

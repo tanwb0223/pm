@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Alert, Button, Divider, Form, Input, Space, Typography } from 'antd'
-import { LockOutlined, UserOutlined } from '@ant-design/icons'
+import { LockOutlined, ThunderboltFilled, UserOutlined } from '@ant-design/icons'
 
 import { authApi } from '@/api'
 import { useAuthStore } from '@/stores/auth'
@@ -75,8 +75,11 @@ export default function LoginPage() {
   return (
     <div className="login-wrapper">
       <div className="login-card">
+        <div className="login-logo">
+          <ThunderboltFilled />
+        </div>
         <h1 className="login-title">产教融合项目管理系统</h1>
-        <p className="login-sub">产教融合项目管理</p>
+        <p className="login-sub">产教融合项目管理平台</p>
 
         {urlError && (
           <Alert

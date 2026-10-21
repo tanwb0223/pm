@@ -204,7 +204,7 @@ export default function RiskListPage() {
         key: 'overdue_days',
         width: 90,
         render: (v: number) =>
-          v > 0 ? <Tag color="red">超{v}天</Tag> : <span style={{ color: '#bfbfbf' }}>—</span>,
+          v > 0 ? <Tag color="red">超{v}天</Tag> : <span style={{ color: '#9ca3af' }}>—</span>,
       },
       {
         title: '操作',

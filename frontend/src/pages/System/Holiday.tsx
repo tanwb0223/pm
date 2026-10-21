@@ -152,7 +152,7 @@ export default function HolidayPage() {
 
       <Space style={{ marginBottom: 16 }}>
         <Select style={{ width: 130 }} options={yearOptions} value={year} onChange={setYear} />
-        <span style={{ color: '#8c8c8c', fontSize: 13 }}>
+        <span style={{ color: '#6b7280', fontSize: 13 }}>
           当年共 {data?.length ?? 0} 个免填日
         </span>
       </Space>

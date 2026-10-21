@@ -89,7 +89,7 @@ export default function AuditPage() {
           <span>
             {row.target_type}
             {row.target_id !== null && (
-              <span style={{ color: '#8c8c8c' }}> #{row.target_id}</span>
+              <span style={{ color: '#6b7280' }}> #{row.target_id}</span>
             )}
           </span>
         ) : (

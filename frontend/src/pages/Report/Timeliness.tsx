@@ -24,9 +24,9 @@ import { useDictStore } from '@/stores/dict'
 import type { TimelinessDetailRow } from '@/types'
 
 const STATE_COLOR: Record<string, string> = {
-  MISSING: '#cf1322',
-  LATE: '#d46b08',
-  ON_TIME: '#389e0d',
+  MISSING: '#ef4444',
+  LATE: '#f59e0b',
+  ON_TIME: '#10b981',
 }
 
 const STATE_OPTIONS = [
@@ -69,7 +69,7 @@ export default function TimelinessPage() {
 
   const rate = data?.rate ?? null
   const rateColor =
-    rate === null ? '#d9d9d9' : rate >= 90 ? '#389e0d' : rate >= 70 ? '#d46b08' : '#cf1322'
+    rate === null ? '#e5e7eb' : rate >= 90 ? '#10b981' : rate >= 70 ? '#f59e0b' : '#ef4444'
 
   const columns: ColumnsType<TimelinessDetailRow> = [
     {
@@ -112,9 +112,9 @@ export default function TimelinessPage() {
       align: 'right',
       render: (v: number, r) =>
         r.state === 'ON_TIME' ? (
-          <span style={{ color: '#bfbfbf' }}>—</span>
+          <span style={{ color: '#9ca3af' }}>—</span>
         ) : (
-          <span style={{ color: '#cf1322', fontWeight: 600 }}>{v} 天</span>
+          <span style={{ color: '#ef4444', fontWeight: 600 }}>{v} 天</span>
         ),
     },
   ]
@@ -174,7 +174,7 @@ export default function TimelinessPage() {
             <Statistic
               title="按期提交"
               value={data?.on_time ?? 0}
-              valueStyle={{ color: '#389e0d' }}
+              valueStyle={{ color: '#10b981' }}
               loading={isLoading}
             />
           </Card>
@@ -184,7 +184,7 @@ export default function TimelinessPage() {
             <Statistic
               title="迟交"
               value={data?.late ?? 0}
-              valueStyle={{ color: '#d46b08' }}
+              valueStyle={{ color: '#f59e0b' }}
               loading={isLoading}
             />
           </Card>
@@ -194,7 +194,7 @@ export default function TimelinessPage() {
             <Statistic
               title="缺交"
               value={data?.missing ?? 0}
-              valueStyle={{ color: '#cf1322' }}
+              valueStyle={{ color: '#ef4444' }}
               loading={isLoading}
             />
           </Card>
@@ -211,7 +211,7 @@ export default function TimelinessPage() {
           }}
         >
           {rate === null ? (
-            <span style={{ color: '#8c8c8c', fontSize: 16 }}>暂无数据</span>
+            <span style={{ color: '#6b7280', fontSize: 16 }}>暂无数据</span>
           ) : (
             <Progress
               type="dashboard"
@@ -269,7 +269,7 @@ export default function TimelinessPage() {
             key: 'rule',
             label: '计算口径说明',
             children: (
-              <div style={{ color: '#595959', lineHeight: 1.9 }}>
+              <div style={{ color: '#4b5563', lineHeight: 1.9 }}>
                 <p>及时率 = 按期提交数 ÷ 应提交数。</p>
                 <p>
                   分子：提交时间不晚于截止时间（日报当日 24:00，周报次周一 12:00，月报次月第 3

@@ -144,7 +144,7 @@ export default function MajorDetailPage() {
     {
       title: '学院负责人',
       dataIndex: 'college_owner_name',
-      render: (v: string | null) => v ?? <span style={{ color: '#cf1322' }}>未指定</span>,
+      render: (v: string | null) => v ?? <span style={{ color: '#ef4444' }}>未指定</span>,
     },
     { title: '子项目数', dataIndex: 'sub_count', width: 100, align: 'center' },
     {
@@ -185,7 +185,7 @@ export default function MajorDetailPage() {
             {fmtDate(record.plan_start)} ~ {fmtDate(record.plan_end)}
           </>
         ) : (
-          <span style={{ color: '#d46b08' }}>未设置</span>
+          <span style={{ color: '#f59e0b' }}>未设置</span>
         ),
     },
     {
@@ -260,7 +260,7 @@ export default function MajorDetailPage() {
           <Descriptions.Item label="总负责人">{major.owner_name ?? '—'}</Descriptions.Item>
           <Descriptions.Item label="原始计划">
             {fmtDate(major.original_start)} ~ {fmtDate(major.original_end)}
-            <span style={{ color: '#8c8c8c', marginLeft: 6, fontSize: 12 }}>（立项锁定）</span>
+            <span style={{ color: '#6b7280', marginLeft: 6, fontSize: 12 }}>（立项锁定）</span>
           </Descriptions.Item>
           <Descriptions.Item label="参与学院">{major.college_count} 个</Descriptions.Item>
           <Descriptions.Item label="子项目">{major.sub_count} 个</Descriptions.Item>

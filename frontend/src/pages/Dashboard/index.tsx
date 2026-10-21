@@ -110,47 +110,39 @@ export default function DashboardPage() {
     <div className="page-container">
       <PageHeader title="我的督办" subtitle="需要您关注和处理的事项" />
 
-      {/* 统计卡片 */}
-      <Row gutter={16} style={{ marginBottom: 16 }}>
-        <Col span={6}>
-          <Card loading={todoLoading}>
-            <div className="stat-card">
-              <div className="stat-number" style={{ color: '#cf1322' }}>
-                {todo?.pending_alerts ?? 0}
-              </div>
-              <div className="stat-label">待处置预警</div>
+      {/* 指标卡 */}
+      <Row gutter={16} style={{ marginBottom: 20 }}>
+        <Col xs={24} sm={12} xl={6}>
+          <div className="metric-card is-danger">
+            <div className="metric-label">待处置预警</div>
+            <div className="metric-value is-danger">
+              {todoLoading ? '—' : (todo?.pending_alerts ?? 0)}
             </div>
-          </Card>
+          </div>
         </Col>
-        <Col span={6}>
-          <Card loading={todoLoading}>
-            <div className="stat-card">
-              <div className="stat-number" style={{ color: '#d46b08' }}>
-                {todo?.lagging_subs ?? 0}
-              </div>
-              <div className="stat-label">滞后子项目</div>
+        <Col xs={24} sm={12} xl={6}>
+          <div className="metric-card is-warning">
+            <div className="metric-label">滞后子项目</div>
+            <div className="metric-value is-warning">
+              {todoLoading ? '—' : (todo?.lagging_subs ?? 0)}
             </div>
-          </Card>
+          </div>
         </Col>
-        <Col span={6}>
-          <Card loading={pendingLoading}>
-            <div className="stat-card">
-              <div className="stat-number" style={{ color: '#1e3a5f' }}>
-                {pendingCount}
-              </div>
-              <div className="stat-label">待填报表</div>
+        <Col xs={24} sm={12} xl={6}>
+          <div className="metric-card">
+            <div className="metric-label">待填报表</div>
+            <div className="metric-value" style={{ color: '#4f46e5' }}>
+              {pendingLoading ? '—' : pendingCount}
             </div>
-          </Card>
+          </div>
         </Col>
-        <Col span={6}>
-          <Card loading={!inProgress}>
-            <div className="stat-card">
-              <div className="stat-number" style={{ color: '#389e0d' }}>
-                {inProgress?.total ?? 0}
-              </div>
-              <div className="stat-label">进行中子项目</div>
+        <Col xs={24} sm={12} xl={6}>
+          <div className="metric-card is-success">
+            <div className="metric-label">进行中子项目</div>
+            <div className="metric-value is-success">
+              {inProgress ? (inProgress.total ?? 0) : '—'}
             </div>
-          </Card>
+          </div>
         </Col>
       </Row>
 

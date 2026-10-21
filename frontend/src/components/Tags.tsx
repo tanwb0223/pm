@@ -71,7 +71,7 @@ export function RiskLevelTag({ level }: { level: string }) {
 
 /** 偏差数字（带颜色，滞后 < -10% 橙色，<= -25% 红色） */
 export function DeviationText({ value }: { value: number | null }) {
-  if (value === null) return <span style={{ color: '#bfbfbf' }}>—</span>
+  if (value === null) return <span style={{ color: '#9ca3af' }}>—</span>
   return (
     <span style={{ color: deviationColor(value), fontWeight: Math.abs(value) >= 10 ? 600 : 400 }}>
       {value > 0 ? `+${value}` : value}

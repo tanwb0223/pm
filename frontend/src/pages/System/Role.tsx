@@ -138,7 +138,7 @@ function RoleTab({ canWrite }: { canWrite: boolean }) {
             新增自定义角色
           </Button>
         )}
-        <span style={{ marginLeft: 12, color: '#8c8c8c', fontSize: 13 }}>
+        <span style={{ marginLeft: 12, color: '#6b7280', fontSize: 13 }}>
           一期自定义角色上限 3 个（不含系统内置）
         </span>
       </div>
@@ -494,14 +494,14 @@ function PermTab({ canWrite }: { canWrite: boolean }) {
             保存权限
           </Button>
         )}
-        <span style={{ color: '#8c8c8c', fontSize: 13 }}>
+        <span style={{ color: '#6b7280', fontSize: 13 }}>
           提示：保存为全量覆盖；SYS_ADMIN 角色不可修改
         </span>
         {roleId !== undefined && isLoadingRolePerms && <span>加载权限中…</span>}
       </Space>
 
       {roleId === undefined ? (
-        <div style={{ color: '#8c8c8c', padding: '24px 0', textAlign: 'center' }}>
+        <div style={{ color: '#6b7280', padding: '24px 0', textAlign: 'center' }}>
           请先选择一个角色
         </div>
       ) : (
