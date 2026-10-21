@@ -238,7 +238,7 @@ def export_reports(
 
 # ================================================================ 字段清单
 @router.get("/fields", summary="可导出字段清单（供前端勾选）")
-def export_fields():
+def export_fields(user: CurrentUser = Depends(get_current_user)):
     return ok(
         {
             "major": [{"key": k, "label": v} for k, v in MAJOR_FIELDS],

@@ -125,3 +125,45 @@ def assert_report_access(user: CurrentUser, report: Any) -> None:
         return
     if not user.has_all_scope():
         raise ForbiddenError("无权访问该报表")
+
+
+# ---------------------------------------------------------------- 新建目标范围
+def can_write_sub_target(user: CurrentUser, major_id: int | None, college_id: int | None) -> bool:
+    """新建子项目时的目标范围校验（编辑/删除用 assert_sub_access）
+
+    非全校范围时，目标大项目或目标学院至少有一个在本人授权范围内。
+    """
+    if user.has_all_scope():
+        return True
+    if major_id is not None and major_id in user.major_ids():
+        return True
+    if college_id is not None and college_id in user.college_ids():
+        return True
+    return False
+
+
+def can_access_risk(user: CurrentUser, risk: Any, sub: Any = None) -> bool:
+    """风险是否在本人数据范围内
+
+    命中任一即放行：
+    - 全校范围
+    - 风险所属大项目在本人 MAJOR 范围内
+    - 风险关联子项目所在学院在本人 COLLEGE 范围内
+    - 本人是风险责任人（SELF 范围）
+    """
+    if user.has_all_scope():
+        return True
+    if getattr(risk, "major_id", None) in user.major_ids():
+        return True
+    if getattr(risk, "owner_id", None) == user.id:
+        return True
+    s = sub if sub is not None else getattr(risk, "sub", None)
+    if s is not None and getattr(s, "college_id", None) in user.college_ids():
+        return True
+    return False
+
+
+def assert_risk_access(user: CurrentUser, risk: Any, sub: Any = None) -> None:
+    """风险详情与增删改：无权操作直接 403"""
+    if not can_access_risk(user, risk, sub):
+        raise ForbiddenError("无权访问该风险")

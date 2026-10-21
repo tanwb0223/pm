@@ -10,8 +10,9 @@ from sqlalchemy.orm import Session
 
 from app.core.deps import CurrentUser, get_current_user, require_perm
 from app.core.response import ok, page
-from app.core.scope import assert_report_access
+from app.core.scope import assert_report_access, assert_sub_access
 from app.db.session import get_db
+from app.services.project_service import ProjectService
 from app.services.report_service import ReportService
 
 router = APIRouter(prefix="/api", tags=["报表管理"])
@@ -128,6 +129,8 @@ def weekly_draft(
     db: Session = Depends(get_db),
 ):
     svc = ReportService(db)
+    # 数据范围：只能给自己有权访问的子项目生成初稿
+    assert_sub_access(user, ProjectService(db).get_sub(body.sub_id))
     return ok(svc.generate_weekly_draft(body.sub_id, body.week_start))
 
 
@@ -187,7 +190,10 @@ def timeliness_detail(
 
 # ---------------------------------------------------------------- 填报选项
 @router.get("/reports/options", summary="填报选项（当前启用的报表类型）")
-def report_options(db: Session = Depends(get_db)):
+def report_options(
+    user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """供填报页使用：哪些报表类型是启用的
 
     日报由参数 report.daily.enabled 控制（默认关闭）。这个接口只读、登录即可访问，
@@ -204,6 +210,7 @@ def report_options(db: Session = Depends(get_db)):
 def period_info(
     type: str = Query(pattern="^(DAILY|WEEKLY|MONTHLY)$"),
     day: date | None = None,
+    user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     svc = ReportService(db)

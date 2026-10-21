@@ -132,12 +132,17 @@ class AlertService:
 
     # ============================================================ 去重合并
     def _create_or_merge(self, cand: AlertCandidate, day: date) -> str:
-        """7 天同源合并：同 dedup_key 且未关闭的预警，只加计数不重复推"""
+        """7 天同源合并：同 dedup_key 且未关闭的预警，只加计数不重复推
+
+        IGNORED 也参与去重：被明确忽略的预警在合并窗口内不再重新生成，
+        否则次日扫描又会建一条新的，"忽略"失去意义（只做窗口内抑制，
+        窗口过期后条件仍存在会重新提醒）。
+        """
         since = datetime.now(UTC) - timedelta(days=DEDUP_WINDOW_DAYS)
         exist = self.db.scalar(
             select(Alert).where(
                 Alert.dedup_key == cand.dedup_key,
-                Alert.status.in_(("PENDING", "CLAIMED")),
+                Alert.status.in_(("PENDING", "CLAIMED", "IGNORED")),
                 Alert.created_at >= since,
             )
         )
@@ -171,10 +176,12 @@ class AlertService:
         self.db.flush()
 
         # 通知（黄色仅提示，不进待办）
+        # 邮件通道受参数 notify.email.enabled 控制（早期该参数改了不生效）
+        email_enabled = self.config.get_bool("notify.email.enabled", True)
         if cand.level in ("RED", "ORANGE"):
             for uid in receiver:
                 self._notify(alert, uid, "INNER", cand)
-                if cand.level == "RED":
+                if cand.level == "RED" and email_enabled:
                     self._notify(alert, uid, "EMAIL", cand)
         else:
             for uid in receiver[:1]:
@@ -237,6 +244,38 @@ class AlertService:
         )
 
     # ============================================================ 查询
+    def _scope_cond(self, user: Any):
+        """预警查询的数据范围条件；全校范围返回 None（不过滤）
+
+        与 app.core.scope.can_access_alert 保持同一口径：
+        大项目范围 / 学院范围 / 本人已认领 / 本人负责的子项目（SELF）。
+        早期实现漏掉 SELF 分支，子项目负责人登录后预警中心是空的。
+        """
+        if user.has_all_scope():
+            return None
+        conds: list[Any] = []
+        major_ids = user.major_ids()
+        college_ids = user.college_ids()
+        if major_ids:
+            conds.append(Alert.major_id.in_(major_ids))
+        if college_ids:
+            conds.append(Alert.college_id.in_(college_ids))
+        conds.append(Alert.claimed_by == user.id)
+        # SELF 范围：能看到自己负责的子项目产生的预警
+        owned_sub_ids = list(
+            self.db.scalars(
+                select(ProjSub.id).where(
+                    ProjSub.owner_id == user.id, ProjSub.deleted_at.is_(None)
+                )
+            )
+        )
+        if owned_sub_ids:
+            conds.append(Alert.sub_id.in_(owned_sub_ids))
+        if not conds:
+            # 没有任何可匹配的范围：返回空集（安全默认）
+            return Alert.id == -1
+        return or_(*conds)
+
     def list_alerts(
         self,
         user: Any,
@@ -252,19 +291,10 @@ class AlertService:
     ) -> tuple[list[Alert], int]:
         stmt = select(Alert)
 
-        # 数据范围
-        if not user.has_all_scope():
-            major_ids = user.major_ids()
-            college_ids = user.college_ids()
-            conds = []
-            if major_ids:
-                conds.append(Alert.major_id.in_(major_ids))
-            if college_ids:
-                conds.append(Alert.college_id.in_(college_ids))
-            if conds:
-                stmt = stmt.where(or_(*conds))
-            else:
-                stmt = stmt.where(Alert.id == -1)
+        # 数据范围（大项目/学院/本人认领/本人负责子项目）
+        scope_cond = self._scope_cond(user)
+        if scope_cond is not None:
+            stmt = stmt.where(scope_cond)
 
         if status:
             stmt = stmt.where(Alert.status == status)
@@ -298,18 +328,9 @@ class AlertService:
     def grouped(self, user: Any) -> dict:
         """折叠展示：按大项目 → 学院聚合（文档 3.3 避免预警泛滥）"""
         stmt = select(Alert).where(Alert.status.in_(("PENDING", "CLAIMED")))
-        if not user.has_all_scope():
-            major_ids = user.major_ids()
-            college_ids = user.college_ids()
-            conds = []
-            if major_ids:
-                conds.append(Alert.major_id.in_(major_ids))
-            if college_ids:
-                conds.append(Alert.college_id.in_(college_ids))
-            if conds:
-                stmt = stmt.where(or_(*conds))
-            else:
-                stmt = stmt.where(Alert.id == -1)
+        scope_cond = self._scope_cond(user)
+        if scope_cond is not None:
+            stmt = stmt.where(scope_cond)
 
         alerts = list(self.db.scalars(stmt))
         majors = {m.id: m.name for m in self.db.scalars(select(ProjMajor))}
@@ -464,18 +485,9 @@ class AlertService:
         """预警统计：按类型/等级/状态；用于看板和按时处置率"""
         since = datetime.now(UTC) - timedelta(days=days)
         stmt = select(Alert).where(Alert.trigger_at >= since)
-        if not user.has_all_scope():
-            major_ids = user.major_ids()
-            college_ids = user.college_ids()
-            conds = []
-            if major_ids:
-                conds.append(Alert.major_id.in_(major_ids))
-            if college_ids:
-                conds.append(Alert.college_id.in_(college_ids))
-            if conds:
-                stmt = stmt.where(or_(*conds))
-            else:
-                stmt = stmt.where(Alert.id == -1)
+        scope_cond = self._scope_cond(user)
+        if scope_cond is not None:
+            stmt = stmt.where(scope_cond)
 
         alerts = list(self.db.scalars(stmt))
 
@@ -569,16 +581,9 @@ class AlertService:
         否则会出现「数字很大但清单只有几条」的错位。
         """
         stmt = select(Alert).where(Alert.status.in_(("PENDING", "CLAIMED")))
-        if not user.has_all_scope():
-            major_ids = user.major_ids()
-            college_ids = user.college_ids()
-            conds = []
-            if major_ids:
-                conds.append(Alert.major_id.in_(major_ids))
-            if college_ids:
-                conds.append(Alert.college_id.in_(college_ids))
-            conds.append(Alert.claimed_by == user.id)
-            stmt = stmt.where(or_(*conds))
+        scope_cond = self._scope_cond(user)
+        if scope_cond is not None:
+            stmt = stmt.where(scope_cond)
 
         pending_alerts = list(self.db.scalars(stmt))
         # 待办清单：本人已认领的 + 范围内尚未认领的

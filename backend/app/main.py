@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
@@ -19,12 +20,35 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------- 启动/关闭
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # SQLite 首次运行：自动建表 + 灌基础数据
+    from app.db.session import init_db, init_seed_data
+
+    init_db()
+    init_seed_data()
+
+    logger.info("%s 启动完成", settings.app_name)
+    from app.jobs.scheduler import start_scheduler
+
+    start_scheduler()
+
+    yield
+
+    from app.jobs.scheduler import stop_scheduler
+
+    stop_scheduler()
+    logger.info("%s 已停止", settings.app_name)
+
+
 app = FastAPI(
     title=settings.app_name,
     version="0.1.0",
     docs_url="/docs" if settings.debug else None,
     redoc_url=None,
     description="产教融合项目管理系统后端 API",
+    lifespan=lifespan,
 )
 
 # 审计：记录写操作
@@ -144,26 +168,3 @@ if settings.frontend_serve and _FRONTEND_DIR.is_dir():
     logger.info("已启用前端静态托管（FastAPI 模式）：%s", _FRONTEND_DIR)
 else:
     logger.info("前端由 nginx 托管，FastAPI 仅提供 API")
-
-
-# ---------------------------------------------------------------- 启动/关闭
-@app.on_event("startup")
-def on_startup():
-    # SQLite 首次运行：自动建表 + 灌基础数据
-    from app.db.session import init_db, init_seed_data
-
-    init_db()
-    init_seed_data()
-
-    logger.info("%s 启动完成", settings.app_name)
-    from app.jobs.scheduler import start_scheduler
-
-    start_scheduler()
-
-
-@app.on_event("shutdown")
-def on_shutdown():
-    from app.jobs.scheduler import stop_scheduler
-
-    stop_scheduler()
-    logger.info("%s 已停止", settings.app_name)

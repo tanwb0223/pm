@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
 
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from app.models.alert import Risk
@@ -257,8 +257,17 @@ class AL09NoOwner(AlertRule):
             )
 
         # 2) 学院未指定负责人
+        # 每个 (大项目, 学院) 组合只产生一条预警。
+        # 早期用 distinct(major_id, college_id)：PG 正常，但 SQLite 不支持
+        # 列级 DISTINCT，会退化成整行去重，导致同一条"学院无负责人"
+        # 按子项目数量重复生成 N 条。改用 group_by + min(sub_id)，
+        # 两个方言语义一致，且一条 SQL 拿回配对子项目。
         rows = db.execute(
-            select(ProjMajorCollege, ProjSub)
+            select(
+                ProjMajorCollege.major_id,
+                ProjMajorCollege.college_id,
+                func.min(ProjSub.id).label("sub_id"),
+            )
             .join(
                 ProjSub,
                 (ProjSub.major_id == ProjMajorCollege.major_id)
@@ -268,16 +277,16 @@ class AL09NoOwner(AlertRule):
                 ProjMajorCollege.college_owner_id.is_(None),
                 ProjSub.deleted_at.is_(None),
             )
-            .distinct(ProjMajorCollege.major_id, ProjMajorCollege.college_id)
+            .group_by(ProjMajorCollege.major_id, ProjMajorCollege.college_id)
         ).all()
-        for mc, sub in rows:
+        for major_id, college_id, sub_id in rows:
             out.append(
                 AlertCandidate(
                     alert_type=self.code,
                     level=self.level,
-                    sub_id=sub.id,
-                    major_id=mc.major_id,
-                    college_id=mc.college_id,
+                    sub_id=sub_id,
+                    major_id=major_id,
+                    college_id=college_id,
                     detail={"问题": "学院未指定负责人"},
                     owner_id=None,
                 )

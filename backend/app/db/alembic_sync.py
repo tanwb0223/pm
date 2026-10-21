@@ -11,8 +11,10 @@
     建表后立即写入 alembic 版本标记（stamp head）。
     这样：
     - 全新部署：create_all 建表 + stamp head
-    - 后续升级：alembic upgrade head 只执行新增的迁移
+    - 已有库但版本落后：alembic upgrade head 只执行新增的迁移
     - 已有环境：检测到表存在但版本为空时自动补上
+    - 历史漂移（create_all 不执行迁移导致的模型/库不一致）：
+      由 repair_sqlite_schema() 按已知清单修复
 """
 from __future__ import annotations
 
@@ -25,7 +27,10 @@ logger = logging.getLogger(__name__)
 
 # 与 alembic/versions/ 下最新的 revision 保持一致
 # 新增迁移时记得同步更新这里
-LATEST_REVISION = "0004_attachment"
+LATEST_REVISION = "0005_role_perms"
+
+# alembic.ini 位置：app/db/alembic_sync.py → backend/alembic.ini
+_ALEMBIC_INI = Path(__file__).resolve().parent.parent.parent / "alembic.ini"
 
 
 def alembic_version_of(db_url: str) -> str | None:
@@ -105,3 +110,116 @@ def ensure_alembic_stamped(db_url: str) -> None:
         stamp_alembic(db_url)
     except Exception:
         logger.warning("写入 Alembic 版本标记失败（不影响使用）", exc_info=True)
+
+
+# ---------------------------------------------------------------- 升级与修复
+def run_alembic_upgrade(db_url: str) -> bool:
+    """对已有库执行 alembic upgrade head（SQLite 专用）
+
+    只在版本标记落后于 head 时才有事情做；追平后是空转。
+    任何失败都只记日志，不阻断启动（SQLite 部署允许降级运行）。
+    """
+    from app.db.dialect import is_sqlite
+
+    if not is_sqlite(db_url) or not _ALEMBIC_INI.is_file():
+        return False
+
+    try:
+        current = alembic_version_of(db_url)
+        if not current or current == LATEST_REVISION:
+            return False
+
+        from alembic import command
+        from alembic.config import Config
+
+        cfg = Config(str(_ALEMBIC_INI))
+        cfg.set_main_option("sqlalchemy.url", db_url)
+        logger.info("检测到 Alembic 版本落后（%s → %s），执行迁移...", current, LATEST_REVISION)
+        command.upgrade(cfg, "head")
+        logger.info("Alembic 迁移完成")
+        return True
+    except Exception:
+        logger.warning("Alembic 迁移失败（不影响本次启动，请手动执行 alembic upgrade head）",
+                       exc_info=True)
+        return False
+
+
+# 已知的历史漂移：SQLite 走 create_all，模型改过的约束不会同步到旧库。
+# 每项 = (表名, 修复函数)。修复函数接收 (engine, insp)。
+def _repair_alert_action_operator_id(engine, insp) -> bool:
+    """alert_action.operator_id 恢复可为空（对齐 alembic 0003 与模型）
+
+    SQLite 不支持直接改列约束，按标准做法重建表：
+    建新表 → 拷数据 → 删旧表 → 重命名。
+    """
+    if "alert_action" not in insp.get_table_names():
+        return False
+    cols = {c["name"]: c for c in insp.get_columns("alert_action")}
+    col = cols.get("operator_id")
+    if col is None or col.get("nullable", True):
+        return False  # 不存在或已是可空，无需修复
+
+    logger.info("修复历史漂移：alert_action.operator_id 重建为可空")
+    with engine.begin() as conn:
+        conn.execute(text("DROP TABLE IF EXISTS alert_action_migrate_tmp"))
+        conn.execute(
+            text(
+                """
+                CREATE TABLE alert_action_migrate_tmp (
+                    id INTEGER NOT NULL,
+                    alert_id INTEGER NOT NULL,
+                    action VARCHAR(16) NOT NULL,
+                    operator_id INTEGER,
+                    reason VARCHAR(500),
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                    PRIMARY KEY (id),
+                    CONSTRAINT ck_action_type CHECK (action IN ('CLAIM','TRANSFER','CLOSE','IGNORE','ESCALATE')),
+                    FOREIGN KEY(alert_id) REFERENCES alert (id),
+                    FOREIGN KEY(operator_id) REFERENCES sys_user (id)
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO alert_action_migrate_tmp "
+                "(id, alert_id, action, operator_id, reason, created_at) "
+                "SELECT id, alert_id, action, operator_id, reason, created_at FROM alert_action"
+            )
+        )
+        conn.execute(text("DROP TABLE alert_action"))
+        conn.execute(text("ALTER TABLE alert_action_migrate_tmp RENAME TO alert_action"))
+    return True
+
+
+_KNOWN_REPAIRS = [
+    _repair_alert_action_operator_id,
+]
+
+
+def repair_sqlite_schema(db_url: str) -> int:
+    """修复 SQLite 已知的结构漂移（幂等）
+
+    create_all 只会建新表、不会改旧表，所以历史上"模型改了但库没改"
+    的列约束会一直错下去（典型：alert_action.operator_id）。
+    这里按清单逐项检查修复，返回修复项数。
+    """
+    from app.db.dialect import is_sqlite
+
+    if not is_sqlite(db_url):
+        return 0
+
+    engine = create_engine(db_url, pool_pre_ping=True)
+    try:
+        insp = inspect(engine)
+        if "alert" not in insp.get_table_names():
+            return 0  # 还没建表，全新库无需修复
+        fixed = sum(1 for fn in _KNOWN_REPAIRS if fn(engine, insp))
+        if fixed:
+            logger.info("SQLite 结构漂移修复完成：%d 项", fixed)
+        return fixed
+    except Exception:
+        logger.warning("SQLite 结构漂移修复失败（不影响使用）", exc_info=True)
+        return 0
+    finally:
+        engine.dispose()

@@ -15,7 +15,7 @@ from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import BusinessError, NotFoundError
-from app.core.scope import apply_scope
+from app.core.scope import apply_scope, assert_sub_access
 from app.models.project import ProgRecord, ProjSub
 from app.models.report import Report
 from app.services.calendar_service import CalendarService
@@ -136,6 +136,8 @@ class ReportService:
         sub = self.db.get(ProjSub, sub_id)
         if sub is None or sub.deleted_at is not None:
             raise NotFoundError("子项目不存在")
+        # 数据范围：只能给有权访问的子项目提交报表（防水平越权）
+        assert_sub_access(operator, sub)
         if sub.status == "CLOSED":
             raise BusinessError("已结项的子项目不能再提交报表")
 
@@ -143,7 +145,20 @@ class ReportService:
             raise BusinessError(f"未知报表类型：{rtype}")
 
         base_day = period_start or date.today()
+        # 不允许提交未来周期（周期尚未开始）
+        if base_day > date.today():
+            raise BusinessError("不能提交未来周期的报表")
         p_start, p_end = self.period_of(rtype, base_day)
+
+        # 截止 + 补填期校验：超过「截止时间 + report.correct_days 天」不再接收。
+        # 早期不校验，既能补交很久以前的报表，也能提交未来周期。
+        deadline = self.deadline_of(rtype, p_start)
+        grace_days = max(0, self.config.get_int("report.correct_days", 3))
+        if datetime.now(UTC) > deadline + timedelta(days=grace_days):
+            raise BusinessError(
+                f"已超过补填期（截止 {deadline.strftime('%Y-%m-%d %H:%M')}，"
+                f"可补填 {grace_days} 天），如需提交请联系学院负责人"
+            )
 
         existing = self.db.scalar(
             select(Report).where(
@@ -429,6 +444,21 @@ class ReportService:
         daily_enabled = self.config.get_bool("report.daily.enabled", False)
         types = [rtype] if rtype else (["DAILY", "WEEKLY", "MONTHLY"] if daily_enabled else ["WEEKLY", "MONTHLY"])
 
+        # 批量取出期间内所有报表（避免 子项目×期次 的 N+1 查询）。
+        # 下界放宽 40 天：周/月期的 period_start 可能早于统计起始日
+        # （如起始日在周中，该周周一早于 start）。
+        reports: dict[tuple[int, str, date], Report] = {}
+        if subs:
+            for r in self.db.scalars(
+                select(Report).where(
+                    Report.sub_id.in_([s.id for s in subs]),
+                    Report.type.in_(types),
+                    Report.period_start >= start - timedelta(days=40),
+                    Report.period_start <= end,
+                )
+            ):
+                reports[(r.sub_id, r.type, r.period_start)] = r
+
         total_due = 0
         on_time = 0
         late = 0
@@ -446,13 +476,7 @@ class ReportService:
                     deadline_passed = deadline <= datetime.now(UTC)
                     if deadline_passed and self.is_due(rt, s, p_start, end):
                         total_due += 1
-                        rep = self.db.scalar(
-                            select(Report).where(
-                                Report.sub_id == s.id,
-                                Report.type == rt,
-                                Report.period_start == p_start,
-                            )
-                        )
+                        rep = reports.get((s.id, rt, p_start))
                         row = {
                             "sub_id": s.id,
                             "sub_name": s.name,

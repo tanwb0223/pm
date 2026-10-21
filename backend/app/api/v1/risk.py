@@ -9,8 +9,9 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.deps import CurrentUser, get_current_user, require_perm
-from app.core.exceptions import BusinessError, NotFoundError
+from app.core.exceptions import BusinessError, ForbiddenError, NotFoundError
 from app.core.response import ok, page
+from app.core.scope import assert_risk_access
 from app.db.session import get_db
 from app.models.alert import Risk
 from app.models.project import ProjSub
@@ -19,6 +20,31 @@ from app.models.system import SysUser
 router = APIRouter(prefix="/api", tags=["风险登记"])
 
 LEVEL_LABEL = {"HIGH": "高", "MEDIUM": "中", "LOW": "低"}
+
+
+def _assert_risk_write_scope(
+    user: CurrentUser, major_id: int, sub_id: int | None, db: Session
+) -> None:
+    """登记风险时的目标范围校验（编辑/关闭/删除用 assert_risk_access）"""
+    if user.has_all_scope():
+        return
+    if major_id in user.major_ids():
+        return
+    if sub_id is not None:
+        sub = db.get(ProjSub, sub_id)
+        if sub is not None:
+            if sub.college_id in user.college_ids():
+                return
+            if sub.owner_id == user.id:
+                return
+    raise ForbiddenError("无权在该项目范围内登记风险")
+
+
+def _load_risk_or_404(db: Session, risk_id: int) -> Risk:
+    r = db.get(Risk, risk_id)
+    if r is None:
+        raise NotFoundError("风险不存在")
+    return r
 
 
 class RiskIn(BaseModel):
@@ -119,9 +145,15 @@ def list_risks(
 
 
 @router.post("/risks", summary="登记风险", dependencies=[Depends(require_perm("risk:edit"))])
-def create_risk(body: RiskIn, db: Session = Depends(get_db)):
+def create_risk(
+    body: RiskIn,
+    user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     if body.sub_id and db.get(ProjSub, body.sub_id) is None:
         raise BusinessError("子项目不存在")
+    # 数据范围：只能在自己管辖范围内登记风险
+    _assert_risk_write_scope(user, body.major_id, body.sub_id, db)
     r = Risk(**body.model_dump())
     db.add(r)
     db.commit()
@@ -129,10 +161,14 @@ def create_risk(body: RiskIn, db: Session = Depends(get_db)):
 
 
 @router.put("/risks/{risk_id}", summary="更新风险", dependencies=[Depends(require_perm("risk:edit"))])
-def update_risk(risk_id: int, body: RiskUpdateIn, db: Session = Depends(get_db)):
-    r = db.get(Risk, risk_id)
-    if r is None:
-        raise NotFoundError("风险不存在")
+def update_risk(
+    risk_id: int,
+    body: RiskUpdateIn,
+    user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    r = _load_risk_or_404(db, risk_id)
+    assert_risk_access(user, r, db.get(ProjSub, r.sub_id) if r.sub_id else None)
     data = body.model_dump(exclude_unset=True)
     for k, v in data.items():
         setattr(r, k, v)
@@ -143,10 +179,13 @@ def update_risk(risk_id: int, body: RiskUpdateIn, db: Session = Depends(get_db))
 
 
 @router.post("/risks/{risk_id}/close", summary="闭环风险", dependencies=[Depends(require_perm("risk:edit"))])
-def close_risk(risk_id: int, db: Session = Depends(get_db)):
-    r = db.get(Risk, risk_id)
-    if r is None:
-        raise NotFoundError("风险不存在")
+def close_risk(
+    risk_id: int,
+    user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    r = _load_risk_or_404(db, risk_id)
+    assert_risk_access(user, r, db.get(ProjSub, r.sub_id) if r.sub_id else None)
     if r.status == "CLOSED":
         raise BusinessError("风险已闭环")
     r.status = "CLOSED"
@@ -156,10 +195,13 @@ def close_risk(risk_id: int, db: Session = Depends(get_db)):
 
 
 @router.delete("/risks/{risk_id}", summary="删除风险", dependencies=[Depends(require_perm("risk:edit"))])
-def delete_risk(risk_id: int, db: Session = Depends(get_db)):
-    r = db.get(Risk, risk_id)
-    if r is None:
-        raise NotFoundError("风险不存在")
+def delete_risk(
+    risk_id: int,
+    user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    r = _load_risk_or_404(db, risk_id)
+    assert_risk_access(user, r, db.get(ProjSub, r.sub_id) if r.sub_id else None)
     db.delete(r)
     db.commit()
     return ok()

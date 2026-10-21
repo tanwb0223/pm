@@ -8,9 +8,9 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.core.deps import CurrentUser, get_current_user, require_perm
-from app.core.exceptions import BusinessError
+from app.core.exceptions import BusinessError, ForbiddenError
 from app.core.response import ok, page
-from app.core.scope import assert_sub_access
+from app.core.scope import assert_sub_access, can_write_sub_target
 from app.db.session import get_db
 from app.schemas.project import (
     CollegeIn,
@@ -274,7 +274,14 @@ def get_sub(
 
 
 @router.post("/subs", summary="新建子项目", dependencies=[Depends(require_perm("project:sub:edit"))])
-def create_sub(body: SubIn, db: Session = Depends(get_db)):
+def create_sub(
+    body: SubIn,
+    user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    # 目标范围校验：非全校授权时，只能在自己管辖的大项目/学院下建子项目
+    if not can_write_sub_target(user, body.major_id, body.college_id):
+        raise ForbiddenError("无权在该大项目/学院下新建子项目")
     svc = ProjectService(db)
     s = svc.create_sub(body)
     db.commit()
@@ -282,16 +289,27 @@ def create_sub(body: SubIn, db: Session = Depends(get_db)):
 
 
 @router.put("/subs/{sub_id}", summary="编辑子项目", dependencies=[Depends(require_perm("project:sub:edit"))])
-def update_sub(sub_id: int, body: SubUpdateIn, db: Session = Depends(get_db)):
+def update_sub(
+    sub_id: int,
+    body: SubUpdateIn,
+    user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     svc = ProjectService(db)
+    assert_sub_access(user, svc.get_sub(sub_id))
     svc.update_sub(sub_id, body)
     db.commit()
     return ok()
 
 
 @router.delete("/subs/{sub_id}", summary="删除子项目", dependencies=[Depends(require_perm("project:sub:edit"))])
-def delete_sub(sub_id: int, db: Session = Depends(get_db)):
+def delete_sub(
+    sub_id: int,
+    user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     svc = ProjectService(db)
+    assert_sub_access(user, svc.get_sub(sub_id))
     svc.delete_sub(sub_id)
     db.commit()
     return ok()

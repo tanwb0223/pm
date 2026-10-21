@@ -80,7 +80,12 @@ class AlertAction(Base):
     id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True)
     alert_id: Mapped[int] = mapped_column(BIGINT_PK, ForeignKey("alert.id"), nullable=False)
     action: Mapped[str] = mapped_column(String(16), nullable=False)
-    operator_id: Mapped[int] = mapped_column(BIGINT_PK, ForeignKey("sys_user.id"), nullable=False)
+    # 系统自动动作（自动关闭、超时升级）没有操作人，必须允许为空。
+    # 与 alembic 0003_alert_nullable 保持一致；SQLite 走 create_all 不执行迁移，
+    # 早期库靠 app/db/alembic_sync.repair_sqlite_schema() 兜底修复。
+    operator_id: Mapped[int | None] = mapped_column(
+        BIGINT_PK, ForeignKey("sys_user.id"), nullable=True
+    )
     reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = aware_timestamp(server_default=func.now())
 

@@ -20,6 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.project import ProjMajor, ProjSub
+from app.services.config_service import ConfigService
 
 # 计入汇总的状态
 _COUNTED_STATUSES = ("IN_PROGRESS", "CLOSED")
@@ -28,12 +29,21 @@ _COUNTED_STATUSES = ("IN_PROGRESS", "CLOSED")
 class AggregationService:
     def __init__(self, db: Session):
         self.db = db
+        self.config = ConfigService(db)
 
     # ------------------------------------------------------------ 子项目
-    def counted_subs(self, major_id: int | None = None, college_id: int | None = None) -> list[ProjSub]:
+    def counted_subs(
+        self,
+        major_id: int | None = None,
+        college_id: int | None = None,
+        include_closed: bool | None = None,
+    ) -> list[ProjSub]:
+        if include_closed is None:
+            include_closed = self.config.get_bool("aggregate.include_closed", True)
+        statuses = _COUNTED_STATUSES if include_closed else ("IN_PROGRESS",)
         stmt = select(ProjSub).where(
             ProjSub.deleted_at.is_(None),
-            ProjSub.status.in_(_COUNTED_STATUSES),
+            ProjSub.status.in_(statuses),
         )
         if major_id is not None:
             stmt = stmt.where(ProjSub.major_id == major_id)
@@ -52,7 +62,9 @@ class AggregationService:
             # 已结项按 100% 计入
             values.append(100 if s.status == "CLOSED" else s.current_progress)
             w = s.weight
-            weights.append(Decimal(w) if w is not None else Decimal(0))
+            # 权重缺失按等权（1）。早期按 0 计：同一项目里只要有人设了权重，
+            # 没设权重的子项目就白算 0 分子，把汇总进度整体拉低。
+            weights.append(Decimal(w) if w is not None else Decimal(1))
 
         total_w = sum(weights)
         if total_w <= 0:

@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from app.core.deps import CurrentUser, get_current_user, require_perm
+from app.core.deps import CurrentUser, get_current_user, require_any_perm, require_perm
 from app.db.dialect import ilike
 from app.core.exceptions import BusinessError, NotFoundError
 from app.core.response import ok, page
@@ -56,12 +56,14 @@ def pick_users(
     keyword: str | None = None,
     college_id: int | None = None,
     limit: int = Query(default=30, ge=1, le=500),
+    user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """供项目负责人、预警转交等场景选择人员。
 
     与 /users 的区别：不要求 system:user 权限，且只返回
     必要字段（id/name/staff_no/college_name），避免泄露手机邮箱。
+    但必须登录后才能调用（可遍历全校通讯录，不能匿名访问）。
     """
     stmt = select(SysUser).where(SysUser.status == "ACTIVE")
     if keyword:
@@ -243,7 +245,7 @@ def delete_grant(grant_id: int, db: Session = Depends(get_db)):
 
 
 # ================================================================ 角色
-@router.get("/roles", summary="角色列表")
+@router.get("/roles", summary="角色列表", dependencies=[Depends(require_perm("system:role"))])
 def list_roles(db: Session = Depends(get_db)):
     roles = list(db.scalars(select(SysRole).order_by(SysRole.id)))
     out = []
@@ -377,6 +379,7 @@ class HolidayIn(BaseModel):
 @router.get("/holidays", summary="免填日历")
 def list_holidays(
     year: int | None = None,
+    user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     stmt = select(SysHoliday).order_by(SysHoliday.date)
@@ -460,7 +463,11 @@ def list_audit(
 
 
 # ================================================================ 批量导入
-@router.get("/import/templates/{kind}", summary="下载导入模板（user / college）")
+@router.get(
+    "/import/templates/{kind}",
+    summary="下载导入模板（user / college）",
+    dependencies=[Depends(require_any_perm("system:user", "system:org"))],
+)
 def download_template(kind: str):
     from app.services import import_service
 

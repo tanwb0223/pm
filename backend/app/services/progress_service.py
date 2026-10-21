@@ -10,7 +10,7 @@ from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import BusinessError, ForbiddenError, NotFoundError
-from app.core.scope import apply_scope
+from app.core.scope import apply_scope, assert_sub_access
 from app.db.dialect import ilike
 from app.models.project import ProgRecord, ProgSnapshot, ProjMajor, ProjSub
 from app.models.system import SysCollege, SysUser
@@ -18,6 +18,9 @@ from app.services.aggregation_service import AggregationService
 from app.services.calendar_service import CalendarService, deviation, time_progress
 
 logger = logging.getLogger(__name__)
+
+# 未传「最近一次填报」时用于区分的哨兵（None 表示"确实没有填报记录"）
+_UNSET = object()
 
 
 class ProgressService:
@@ -39,6 +42,8 @@ class ProgressService:
         sub = self.db.get(ProjSub, sub_id)
         if sub is None or sub.deleted_at is not None:
             raise NotFoundError("子项目不存在")
+        # 数据范围：只能更新自己有权访问的子项目（功能权限之外的水平越权防护）
+        assert_sub_access(operator, sub)
         if sub.status == "CLOSED":
             raise BusinessError("已结项的子项目不能再更新进度")
         if sub.status == "ABORTED":
@@ -108,7 +113,13 @@ class ProgressService:
         )
 
     # ============================================================ 单条进度视图
-    def sub_view(self, sub: ProjSub, today: date | None = None, cal: CalendarService | None = None) -> dict:
+    def sub_view(
+        self,
+        sub: ProjSub,
+        today: date | None = None,
+        cal: CalendarService | None = None,
+        last_record: Any = _UNSET,
+    ) -> dict:
         today = today or date.today()
         cal = cal or CalendarService.load(self.db)
 
@@ -122,12 +133,15 @@ class ProgressService:
             days_since = cal.effective_days_between(last_date, today)
 
         # 上次填报的说明（供前端自动带出，减少重复输入 —— 文档 3.2(1)）
-        last = self.db.scalar(
-            select(ProgRecord)
-            .where(ProgRecord.sub_id == sub.id)
-            .order_by(ProgRecord.created_at.desc())
-            .limit(1)
-        )
+        # 调用方已批量取好则直接用；未传哨兵时才单查（兼容单条视图的调用方式）
+        if last_record is _UNSET:
+            last_record = self.db.scalar(
+                select(ProgRecord)
+                .where(ProgRecord.sub_id == sub.id)
+                .order_by(ProgRecord.created_at.desc())
+                .limit(1)
+            )
+        last = last_record
 
         return {
             "id": sub.id,
@@ -193,11 +207,22 @@ class ProgressService:
         today = date.today()
         cal = CalendarService.load(self.db)
 
+        # 批量取每个子项目最近一次填报（避免 N+1：原来每个子项目一条 SQL）
+        last_records: dict[int, ProgRecord] = {}
+        if subs:
+            for r in self.db.scalars(
+                select(ProgRecord)
+                .where(ProgRecord.sub_id.in_([s.id for s in subs]))
+                .order_by(ProgRecord.sub_id, ProgRecord.created_at.desc())
+            ):
+                # 按 (sub_id, 时间倒序) 排列，每个子项目第一条即最近一次
+                last_records.setdefault(r.sub_id, r)
+
         rows = []
         colleges = {c.id: c.name for c in self.db.scalars(select(SysCollege))}
         majors = {m.id: m.name for m in self.db.scalars(select(ProjMajor))}
         for s in subs:
-            d = self.sub_view(s, today, cal)
+            d = self.sub_view(s, today, cal, last_record=last_records.get(s.id))
             d["college_name"] = colleges.get(s.college_id)
             d["major_name"] = majors.get(s.major_id)
             d["owner_name"] = s.owner.name if s.owner else None

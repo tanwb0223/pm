@@ -11,12 +11,47 @@ from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.deps import CurrentUser, get_current_user, require_perm
-from app.core.exceptions import BusinessError
+from app.core.exceptions import BusinessError, ForbiddenError
 from app.core.response import ok
+from app.core.scope import can_access_risk, can_access_sub
 from app.db.session import get_db
+from app.models.alert import Risk
+from app.models.project import ProjSub
+from app.models.report import Report
 from app.services.attachment_service import AttachmentService
 
 router = APIRouter(prefix="/api/attachments", tags=["附件管理"])
+
+
+def _assert_biz_access(
+    user: CurrentUser, db: Session, biz_type: str, biz_id: int, uploader_id: int | None = None
+) -> None:
+    """附件所属业务对象的数据范围校验（防水平越权下载/上传）"""
+    if user.has_all_scope():
+        return
+    if biz_type == "OTHER":
+        # 无业务对象：仅上传人本人
+        if uploader_id is not None and uploader_id == user.id:
+            return
+    elif biz_type == "SUB":
+        sub = db.get(ProjSub, biz_id)
+        if sub is not None and can_access_sub(user, sub):
+            return
+    elif biz_type == "MAJOR":
+        if biz_id in user.major_ids():
+            return
+    elif biz_type == "REPORT":
+        rep = db.get(Report, biz_id)
+        sub = db.get(ProjSub, rep.sub_id) if rep is not None else None
+        if sub is not None and can_access_sub(user, sub):
+            return
+    elif biz_type == "RISK":
+        risk = db.get(Risk, biz_id)
+        if risk is not None:
+            sub = db.get(ProjSub, risk.sub_id) if risk.sub_id else None
+            if can_access_risk(user, risk, sub):
+                return
+    raise ForbiddenError("无权访问该业务的附件")
 
 
 def _out(att, service: AttachmentService) -> dict:
@@ -54,6 +89,8 @@ async def upload(
     db: Session = Depends(get_db),
 ):
     svc = AttachmentService(db)
+    # 数据范围：只能往自己有权访问的业务对象上传附件
+    _assert_biz_access(user, db, biz_type, biz_id)
     att = svc.save(
         file_obj=file.file,
         file_name=file.filename or "unnamed",
@@ -75,6 +112,7 @@ def list_attachments(
     db: Session = Depends(get_db),
 ):
     svc = AttachmentService(db)
+    _assert_biz_access(user, db, biz_type, biz_id)
     items = svc.list_by_biz(biz_type, biz_id)
     return ok([_out(a, svc) for a in items])
 
@@ -89,6 +127,7 @@ def download(
 ):
     svc = AttachmentService(db)
     att = svc.get(attachment_id)
+    _assert_biz_access(user, db, att.biz_type, att.biz_id, uploader_id=att.uploader_id)
     path = svc.abs_path(att)
 
     if not path.is_file():
@@ -120,6 +159,7 @@ def preview(
 ):
     svc = AttachmentService(db)
     att = svc.get(attachment_id)
+    _assert_biz_access(user, db, att.biz_type, att.biz_id, uploader_id=att.uploader_id)
     path = svc.abs_path(att)
 
     if not path.is_file():

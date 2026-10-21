@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.core.deps import CurrentUser, get_current_user, require_perm
+from app.core.deps import CurrentUser, get_current_user, require_any_perm, require_perm
 from app.core.response import ok, page
 from app.core.scope import assert_alert_access
 from app.db.session import get_db
@@ -149,7 +149,11 @@ def get_alert(
 
 
 # ================================================================ 处置
-@router.post("/alerts/{alert_id}/claim", summary="认领预警")
+@router.post(
+    "/alerts/{alert_id}/claim",
+    summary="认领预警",
+    dependencies=[Depends(require_perm("alert:claim"))],
+)
 def claim(
     alert_id: int,
     user: CurrentUser = Depends(get_current_user),
@@ -162,7 +166,11 @@ def claim(
     return ok()
 
 
-@router.post("/alerts/{alert_id}/close", summary="关闭预警")
+@router.post(
+    "/alerts/{alert_id}/close",
+    summary="关闭预警",
+    dependencies=[Depends(require_perm("alert:close"))],
+)
 def close(
     alert_id: int,
     body: CloseIn,
@@ -176,7 +184,11 @@ def close(
     return ok()
 
 
-@router.post("/alerts/{alert_id}/ignore", summary="忽略预警（必须填理由）")
+@router.post(
+    "/alerts/{alert_id}/ignore",
+    summary="忽略预警（必须填理由）",
+    dependencies=[Depends(require_any_perm("alert:close", "alert:claim"))],
+)
 def ignore(
     alert_id: int,
     body: IgnoreIn,
@@ -190,7 +202,11 @@ def ignore(
     return ok()
 
 
-@router.post("/alerts/{alert_id}/transfer", summary="转交预警")
+@router.post(
+    "/alerts/{alert_id}/transfer",
+    summary="转交预警",
+    dependencies=[Depends(require_perm("alert:transfer"))],
+)
 def transfer(
     alert_id: int,
     body: TransferIn,

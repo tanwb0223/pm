@@ -25,7 +25,7 @@ import {
 import { Avatar, Badge, Button, Dropdown, Layout, Menu, Space, Tag, Typography } from 'antd'
 
 import { alertApi, authApi, collegeApi, majorApi } from '@/api'
-import { useAuthStore, useCan } from '@/stores/auth'
+import { useAuthStore, useCan, useCanAny } from '@/stores/auth'
 import { clearQueryCache } from '@/lib/queryClient'
 import { useDictStore } from '@/stores/dict'
 
@@ -84,6 +84,7 @@ export default function AppLayout() {
 
   // 权限判定：useCan() 内部订阅 user，刷新后 me 回来会触发重渲染
   const can = useCan()
+  const canAny = useCanAny()
 
   // 系统管理二级菜单（按权限过滤）
   const systemChildren = useMemo(() => {
@@ -110,6 +111,42 @@ export default function AppLayout() {
     return list
   }, [can])
 
+  // 项目管理子项（按权限过滤：只有查看大项目权限的不应看到子项目）
+  const projectChildren = useMemo(() => {
+    const list: { key: string; label: string; icon?: JSX.Element }[] = []
+    if (can('project:major:view')) list.push({ key: '/project/majors', label: '大项目' })
+    if (can('project:sub:view')) list.push({ key: '/project/subs', label: '子项目' })
+    return list
+  }, [can])
+
+  // 预警管理子项
+  const alertChildren = useMemo(
+    () => [
+      { key: '/alert/center', label: '预警中心', icon: <AlertOutlined /> },
+      { key: '/alert/stats', label: '预警统计', icon: <BarChartOutlined /> },
+    ],
+    [],
+  )
+
+  // 报表管理子项（按权限过滤）
+  // 判定只用 report 系列权限：不能拿通用 export 判，否则只读用户
+  // （有 export）也会看到「及时率」，还会把「报表管理」父菜单带出来。
+  const canReport = useMemo(
+    () => canAny('report', 'report:fill', 'report:void'),
+    [canAny],
+  )
+
+  const reportChildren = useMemo(() => {
+    if (!canReport) return [] as { key: string; label: string; icon?: JSX.Element }[]
+    const list: { key: string; label: string; icon?: JSX.Element }[] = []
+    if (can('report:fill')) {
+      list.push({ key: '/report/fill', label: '报表填报', icon: <EditOutlined /> })
+    }
+    list.push({ key: '/report/list', label: '报表列表', icon: <FileTextOutlined /> })
+    list.push({ key: '/report/timeliness', label: '及时率', icon: <BarChartOutlined /> })
+    return list
+  }, [can, canReport])
+
   const menuItems = useMemo(() => {
     const items: { key: string; icon: JSX.Element; label: React.ReactNode }[] = [
       {
@@ -126,7 +163,7 @@ export default function AppLayout() {
       },
     ]
 
-    if (can('project:major:view') || can('project:sub:view')) {
+    if (projectChildren.length > 0) {
       items.push({
         key: 'project',
         icon: <ProjectOutlined />,
@@ -141,7 +178,7 @@ export default function AppLayout() {
         label: '学院对比',
       })
     }
-    if (can('alert:list')) {
+    if (can('alert:list') && alertChildren.length > 0) {
       items.push({
         key: 'alert',
         icon: <AlertOutlined />,
@@ -155,7 +192,7 @@ export default function AppLayout() {
         ),
       } as never)
     }
-    if (can('report:fill')) {
+    if (reportChildren.length > 0) {
       items.push({ key: 'report', icon: <FileTextOutlined />, label: '报表管理' } as never)
     }
     if (can('risk:list')) {
@@ -165,22 +202,12 @@ export default function AppLayout() {
       items.push({ key: 'system', icon: <SettingOutlined />, label: '系统管理' } as never)
     }
     return items
-  }, [can, todo, systemChildren])
+  }, [can, todo, systemChildren, projectChildren, alertChildren, reportChildren])
 
   const childrenMap: Record<string, { key: string; label: string; icon?: JSX.Element }[]> = {
-    project: [
-      { key: '/project/majors', label: '大项目' },
-      { key: '/project/subs', label: '子项目' },
-    ],
-    alert: [
-      { key: '/alert/center', label: '预警中心', icon: <AlertOutlined /> },
-      { key: '/alert/stats', label: '预警统计', icon: <BarChartOutlined /> },
-    ],
-    report: [
-      { key: '/report/fill', label: '报表填报', icon: <EditOutlined /> },
-      { key: '/report/list', label: '报表列表', icon: <FileTextOutlined /> },
-      { key: '/report/timeliness', label: '及时率', icon: <BarChartOutlined /> },
-    ],
+    project: projectChildren,
+    alert: alertChildren,
+    report: reportChildren,
     system: systemChildren,
   }
   const finalItems = menuItems.map((item) => {

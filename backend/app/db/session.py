@@ -101,58 +101,62 @@ def init_db() -> None:
     Base.metadata.create_all(engine)
     logger.info("SQLite 表结构已就绪（%d 张表）", len(Base.metadata.tables))
 
+    # 修复历史漂移：create_all 不会改旧表，早期"模型改了库没改"的列约束
+    # （如 alert_action.operator_id）在这里按已知清单重建修复
+    from app.db.alembic_sync import repair_sqlite_schema
+
+    repair_sqlite_schema(_url)
+
     # 写入 Alembic 版本标记
     # 否则后续 alembic upgrade 会以为数据库是空的，重复建表
     from app.db.alembic_sync import ensure_alembic_stamped
 
     ensure_alembic_stamped(_url)
 
+    # 版本落后于 head 时执行增量迁移（SQLite 的升级通道）
+    from app.db.alembic_sync import run_alembic_upgrade
+
+    run_alembic_upgrade(_url)
+
 
 # ================================================================ 角色权限基线
-# 与 alembic/versions/0001_init.py 的 viewer_perms 保持一致：
-# 除系统管理员外，其余 6 个内置角色都至少拥有这些查看类权限。
-# 缺了它们，普通教师登录后侧边栏只剩「我的督办」，点任何业务页都是 403。
-_VIEWER_PERMS = [
-    "dashboard", "dashboard:view",
-    "project", "project:major", "project:major:view",
-    "project:sub", "project:sub:view",
-    "progress", "progress:table",
-    "alert", "alert:list",
-    "export", "export:ledger", "export:progress",
-]
-
-_VIEWER_ROLE_CODES = (
-    "PROJECT_OWNER",
-    "MAJOR_OWNER",
-    "COLLEGE_OWNER",
-    "SUB_OWNER",
-    "REPORTER",
-    "VIEWER",
-)
-
-
+# 权威定义在 app/core/permissions.py 的 ROLE_PERMISSIONS。
+# 那里按「看得到 → 做得了 → 管得住」逐角色叠加，避免出现
+# "角色叫填报人却没有填报权限" 这类问题。
 def _ensure_role_permissions(db) -> None:
-    """补齐非管理员角色的基线权限（幂等）
+    """按角色矩阵补齐权限（幂等，只增不减）
 
-    背景：SQLite 默认部署走的是 init_seed_data()，早期版本只给 SYS_ADMIN
-    灌了权限，其余角色权限数为 0，导致普通用户登录后几乎看不到任何菜单。
-    这里对已有库做一次兜底补齐，缺多少补多少，已存在的不动。
+    背景：早期版本给 6 个非管理员角色灌的是同一套 14 项「只读」权限，
+    结果 REPORTER（填报人）连 report:fill 都没有 —— 角色名叫"填报人"
+    却看不到「报表填报」入口，只有 SYS_ADMIN 能用。
+    现在改为按 app/core/permissions.py 的角色矩阵逐角色补齐。
+
+    只增不减：已授予的权限不动（避免把管理员在界面上手工加的授权删掉）。
     """
     from sqlalchemy import select
 
+    from app.core.permissions import ROLE_PERMISSIONS
     from app.models.system import SysPermission, SysRole, SysRolePermission
 
+    role_codes = tuple(ROLE_PERMISSIONS.keys())
     roles = {
-        r.code: r
-        for r in db.scalars(select(SysRole).where(SysRole.code.in_(_VIEWER_ROLE_CODES)))
+        r.code: r for r in db.scalars(select(SysRole).where(SysRole.code.in_(role_codes)))
     }
     if not roles:
         return
 
-    wanted = list(db.scalars(select(SysPermission).where(SysPermission.code.in_(_VIEWER_PERMS))))
+    # 一次性取出所有需要授予的权限点
+    needed_codes = {c for codes in ROLE_PERMISSIONS.values() for c in codes}
+    perm_by_code = {
+        p.code: p
+        for p in db.scalars(
+            select(SysPermission).where(SysPermission.code.in_(tuple(needed_codes)))
+        )
+    }
 
     added = 0
-    for role in roles.values():
+    for code, role in roles.items():
+        wanted = ROLE_PERMISSIONS.get(code, ())
         existing = set(
             db.scalars(
                 select(SysRolePermission.permission_id).where(
@@ -160,14 +164,15 @@ def _ensure_role_permissions(db) -> None:
                 )
             )
         )
-        for perm in wanted:
-            if perm.id not in existing:
+        for perm_code in wanted:
+            perm = perm_by_code.get(perm_code)
+            if perm is not None and perm.id not in existing:
                 db.add(SysRolePermission(role_id=role.id, permission_id=perm.id))
                 added += 1
 
     if added:
         db.commit()
-        logger.info("已补齐非管理员角色基线权限：%d 条", added)
+        logger.info("已补齐角色权限：%d 条", added)
 
 
 # ================================================================ 系统参数基线
@@ -329,20 +334,14 @@ def init_seed_data() -> None:
             db.flush()
             perm_map[code] = p.id
 
-        # 管理员拥有全部权限
-        admin_id = role_map["SYS_ADMIN"]
-        for pid in perm_map.values():
-            db.add(SysRolePermission(role_id=admin_id, permission_id=pid))
+        # 各角色按矩阵授权（权威定义见 app/core/permissions.py）
+        from app.core.permissions import ROLE_PERMISSIONS
 
-        # 其余角色按基线授予查看类权限（与 0001_init.py 迁移保持一致）
-        for role_code in _VIEWER_ROLE_CODES:
-            rid = role_map.get(role_code)
-            if rid is None:
-                continue
-            for pc in _VIEWER_PERMS:
+        for role_code, role_id in role_map.items():
+            for pc in ROLE_PERMISSIONS.get(role_code, ()):
                 pid = perm_map.get(pc)
                 if pid is not None:
-                    db.add(SysRolePermission(role_id=rid, permission_id=pid))
+                    db.add(SysRolePermission(role_id=role_id, permission_id=pid))
 
         # 默认参数（必须与 alembic/versions/0001_init.py 的 configs 完全一致，
         # 否则 SQLite 部署会缺参数：预警开关、处置时限、报表时限、通知开关全都不生效）

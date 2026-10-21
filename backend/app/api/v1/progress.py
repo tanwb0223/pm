@@ -147,8 +147,15 @@ def major_summary(
     return ok(svc.major_summary(major_id))
 
 
-@router.get("/progress/school", summary="全校进度汇总")
-def school_summary(db: Session = Depends(get_db)):
+@router.get(
+    "/progress/school",
+    summary="全校进度汇总",
+    dependencies=[Depends(require_perm("progress:table"))],
+)
+def school_summary(
+    user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     svc = ProgressService(db)
     return ok(svc.school_summary())
 
@@ -158,10 +165,13 @@ def school_summary(db: Session = Depends(get_db)):
 def sub_trend(
     sub_id: int,
     days: int = Query(default=90, ge=7, le=365, description="统计天数"),
+    user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """返回两条线：实际进度 vs 按时间应有进度，用于看「从哪天开始慢了」"""
     svc = ProgressService(db)
+    # 数据范围：只能看自己有权访问的子项目
+    assert_sub_access(user, ProjectService(db).get_sub(sub_id))
     return ok(svc.sub_trend(sub_id, days))
 
 

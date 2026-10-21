@@ -4,18 +4,19 @@
 - 每日 01:00  生成进度快照 + 预警扫描
 - 每 30 分钟  预警超时升级
 - 每小时      报表逾期扫描（AL-06）
-- 每日 08:30  每日摘要（邮件）
+- 每日 08:30  每日摘要（统计落日志）
+- 每日 02:00  数据库自动备份
 """
 from __future__ import annotations
 
 import logging
 import os
-from datetime import date
+from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
-from sqlalchemy import text
+from sqlalchemy import func, select, text
 
 from app.core.config import settings
 from app.db.session import SessionLocal
@@ -113,14 +114,40 @@ def job_hourly_scan() -> None:
 
 
 def job_daily_digest() -> None:
-    """每日 08:30：摘要（一期仅记日志，邮件发送待接入）"""
-    from app.services.alert_service import AlertService
+    """每日 08:30：摘要（统计昨日新增与当前待处置，落日志）
+
+    早期这里是空壳（只打一行触发时间，统计代码被 `if False` 短路）。
+    现在输出真实数字，便于运维确认任务在跑、预警没有在积压。
+    邮件/站内推送由 notify_log 承载，后续接入实际发送通道。
+    """
+    from app.models.alert import Alert
 
     db = SessionLocal()
     try:
-        alerts = AlertService(db).stats(None, days=1) if False else None
-        # 简化：统计昨日新增并写日志
-        logger.info("每日摘要在 %s:%s 触发", settings.digest_hour, settings.digest_minute)
+        yesterday = date.today() - timedelta(days=1)
+        day_start = datetime.combine(yesterday, time(0, 0), tzinfo=UTC)
+        day_end = day_start + timedelta(days=1)
+        new_yesterday = db.scalar(
+            select(func.count()).select_from(Alert).where(
+                Alert.trigger_at >= day_start, Alert.trigger_at < day_end
+            )
+        ) or 0
+        pending = db.scalar(
+            select(func.count()).select_from(Alert).where(Alert.status == "PENDING")
+        ) or 0
+        overdue = db.scalar(
+            select(func.count()).select_from(Alert).where(
+                Alert.status == "PENDING",
+                Alert.deadline_at.is_not(None),
+                Alert.deadline_at < datetime.now(UTC),
+            )
+        ) or 0
+        logger.info(
+            "每日摘要：昨日新增预警 %s 条；当前待处置 %s 条（其中已超时 %s 条）",
+            new_yesterday, pending, overdue,
+        )
+    except Exception:
+        logger.exception("每日摘要统计失败")
     finally:
         db.close()
 

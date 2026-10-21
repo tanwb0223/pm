@@ -22,6 +22,9 @@ logger = logging.getLogger(__name__)
 WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 # 不需要审计的路径
 SKIP_PATHS = {"/api/auth/login", "/api/auth/login/ldap", "/api/auth/token"}
+# 敏感查询参数：值必须脱敏后才能进审计日志
+# （早期把 token 原样存进 detail.query，审计日志本身成了凭证泄露源）
+SENSITIVE_PARAMS = {"token", "password", "pwd", "secret", "default_password", "credential", "credentials"}
 
 # 路径 → 动作名（更易读）
 ACTION_MAP = [
@@ -80,7 +83,10 @@ class AuditMiddleware(BaseHTTPMiddleware):
             detail: dict[str, Any] = {"status": response.status_code}
             query = dict(request.query_params)
             if query:
-                detail["query"] = query
+                detail["query"] = {
+                    k: ("***" if k.lower() in SENSITIVE_PARAMS else v)
+                    for k, v in query.items()
+                }
 
             target_type, target_id = _target_of(path)
 
