@@ -18,6 +18,7 @@ from app.core.security import hash_password
 from app.db.session import get_db
 from app.models.system import (
     AuditLog,
+    NotifyLog,
     SysConfig,
     SysHoliday,
     SysPermission,
@@ -459,6 +460,72 @@ def list_audit(
                 "created_at": a.created_at,
             }
             for a in rows
+        ],
+        total,
+        page_no,
+        page_size,
+    )
+
+
+# ================================================================ 通知日志
+@router.get(
+    "/notify-logs",
+    summary="通知投递日志",
+    dependencies=[Depends(require_perm("system:audit"))],
+)
+def list_notify_logs(
+    channel: str | None = None,
+    status: str | None = None,
+    receiver_id: int | None = None,
+    biz_type: str | None = None,
+    page_no: int = Query(default=1, ge=1, alias="page"),
+    page_size: int = Query(default=20, ge=1, le=500),
+    db: Session = Depends(get_db),
+):
+    """邮件/短信/站内消息的投递记录
+
+    通道未配置时状态为 SKIPPED 并写明原因，便于运维判断是「没配网关」
+    还是「配了但发失败」。失败记录由每 10 分钟的重投任务重试。
+    """
+    stmt = select(NotifyLog)
+    if channel:
+        stmt = stmt.where(NotifyLog.channel == channel.upper())
+    if status:
+        stmt = stmt.where(NotifyLog.status == status.upper())
+    if receiver_id:
+        stmt = stmt.where(NotifyLog.receiver_id == receiver_id)
+    if biz_type:
+        stmt = stmt.where(NotifyLog.biz_type == biz_type)
+
+    total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+    rows = list(
+        db.scalars(
+            stmt.order_by(NotifyLog.id.desc()).offset((page_no - 1) * page_size).limit(page_size)
+        )
+    )
+
+    # 接收人姓名一次性取回，避免逐条查询
+    uids = {r.receiver_id for r in rows}
+    names: dict[int, str] = {}
+    if uids:
+        names = {
+            u.id: u.name for u in db.scalars(select(SysUser).where(SysUser.id.in_(uids)))
+        }
+
+    return page(
+        [
+            {
+                "id": r.id,
+                "biz_type": r.biz_type,
+                "biz_id": r.biz_id,
+                "channel": r.channel,
+                "receiver_id": r.receiver_id,
+                "receiver_name": names.get(r.receiver_id),
+                "status": r.status,
+                "error": r.error,
+                "sent_at": r.sent_at,
+            }
+            for r in rows
         ],
         total,
         page_no,

@@ -373,6 +373,21 @@ export const systemApi = {
   removeHoliday: (id: number) => del<void>(`/system/holidays/${id}`),
   auditLogs: (params: Record<string, unknown>) =>
     get<PageData<Record<string, unknown>>>('/system/audit-logs', params),
+  /** 通知投递日志（邮件/短信/站内消息） */
+  notifyLogs: (params: Record<string, unknown>) =>
+    get<
+      PageData<{
+        id: number
+        biz_type: string
+        biz_id: number | null
+        channel: string
+        receiver_id: number
+        receiver_name: string | null
+        status: string
+        error: string | null
+        sent_at: string
+      }>
+    >('/system/notify-logs', params),
   /** 下载导入模板 */
   downloadTemplate: (kind: 'user' | 'college') =>
     download(`/system/import/templates/${kind}`),

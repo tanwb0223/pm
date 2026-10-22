@@ -14,9 +14,11 @@ import {
   FileTextOutlined,
   LockOutlined,
   LinkOutlined,
+  CloudServerOutlined,
   LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  NotificationOutlined,
   ProjectOutlined,
   SafetyOutlined,
   SettingOutlined,
@@ -123,6 +125,10 @@ export default function AppLayout() {
     }
     if (can('system:audit')) {
       list.push({ key: '/system/audit', label: '操作日志', icon: <AuditOutlined /> })
+      list.push({ key: '/system/notify-logs', label: '通知日志', icon: <NotificationOutlined /> })
+    }
+    if (can('system:config')) {
+      list.push({ key: '/system/storage', label: '存储运维', icon: <CloudServerOutlined /> })
     }
     return list
   }, [can])

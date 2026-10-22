@@ -21,6 +21,8 @@ import RolePage from '@/pages/System/Role'
 import ConfigPage from '@/pages/System/Config'
 import HolidayPage from '@/pages/System/Holiday'
 import AuditPage from '@/pages/System/Audit'
+import NotifyLogPage from '@/pages/System/NotifyLog'
+import StoragePage from '@/pages/System/Storage'
 import AuthProviderPage from '@/pages/System/AuthProvider'
 import NotFound from '@/pages/NotFound'
 
@@ -73,6 +75,8 @@ export default function App() {
         <Route path="system/configs" element={<ConfigPage />} />
         <Route path="system/holidays" element={<HolidayPage />} />
         <Route path="system/audit" element={<AuditPage />} />
+        <Route path="system/notify-logs" element={<NotifyLogPage />} />
+        <Route path="system/storage" element={<StoragePage />} />
         <Route path="system/auth-providers" element={<AuthProviderPage />} />
       </Route>
 

@@ -211,10 +211,15 @@ def purge_attachment(attachment_id: int, db: Session = Depends(get_db)):
 
 
 # ================================================================ 统计
-@router.get("/stats", summary="附件存储统计")
+@router.get(
+    "/stats",
+    summary="附件存储统计",
+    dependencies=[Depends(require_perm("system:config"))],
+)
 def storage_stats(
     user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    """磁盘占用与剩余空间：属运维信息，限制为管理员（system:config）"""
     svc = AttachmentService(db)
     return ok(svc.stats())
