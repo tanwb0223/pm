@@ -212,6 +212,27 @@ class ProjectService:
         data.pop("original_start", None)
         data.pop("original_end", None)
 
+        # 已结项的大项目不允许再改业务字段（含改名、改负责人），避免结项后数据漂移。
+        # 注意：status 本身要放行，否则结项这个动作自己会被拦住。
+        if m.status == "CLOSED":
+            blocked = [k for k in data if k != "status"]
+            if blocked:
+                raise BusinessError("大项目已结项，不能再修改")
+
+        # 结项前校验：必须先完成或中止所有子项目，否则结项后仍有在跑的任务
+        if data.get("status") == "CLOSED" and m.status != "CLOSED":
+            unfinished = self.db.scalar(
+                select(func.count()).select_from(ProjSub).where(
+                    ProjSub.major_id == major_id,
+                    ProjSub.deleted_at.is_(None),
+                    ProjSub.status.notin_(("CLOSED", "ABORTED")),
+                )
+            )
+            if unfinished:
+                raise BusinessError(
+                    f"还有 {unfinished} 个子项目未结项，请先完成或中止后再结项"
+                )
+
         for k, v in data.items():
             setattr(m, k, v)
         self.db.flush()
@@ -343,6 +364,9 @@ class ProjectService:
         major = self.db.get(ProjMajor, body.major_id)
         if major is None or major.deleted_at is not None:
             raise BusinessError("大项目不存在")
+        # 已结项/已中止的大项目不能再分解新子项目，否则「已结项」形同虚设
+        if major.status in ("CLOSED", "ABORTED"):
+            raise BusinessError(f"大项目已{major.status == 'CLOSED' and '结项' or '中止'}，不能再新建子项目")
         if self.db.get(SysCollege, body.college_id) is None:
             raise BusinessError("学院不存在")
         # ★ 硬规则：子项目必须同时归属大项目和学院，且学院必须已参与该项目

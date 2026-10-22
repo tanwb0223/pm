@@ -169,8 +169,17 @@ class ReportService:
                 Report.period_start == p_start,
             )
         )
-        if existing is not None and existing.status == "VOIDED":
-            raise BusinessError("该期报表已作废，不能重复提交")
+        # 已作废的报表允许重新提交：业务上「作废」就是为了重填。
+        # 原来这里直接 raise，导致作废后该期永久缺报 —— AL-06/AL-07 被撤销后
+        # 又因缺报重新生成，形成「作废 → 缺报 → 告警 → 补不了」的死循环。
+        is_revive = existing is not None and existing.status == "VOIDED"
+        if is_revive:
+            existing.status = "SUBMITTED"
+            existing.void_reason = None
+            existing.voided_by = None
+            existing.voided_at = None
+            existing.submitted_at = datetime.now(UTC)
+            existing.submitted_by = operator.id
 
         now = datetime.now(UTC)
         if existing is None:
@@ -187,8 +196,9 @@ class ReportService:
             )
             self.db.add(rep)
         else:
-            # 已提交：走更正逻辑
-            self._check_correct_permission(existing, operator)
+            # 已提交：走更正逻辑（作废后重填同样走这里，只是不再校验更正时限）
+            if not is_revive:
+                self._check_correct_permission(existing, operator)
             rep = existing
             rep.content = content
             if progress is not None:
