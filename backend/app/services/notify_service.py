@@ -192,9 +192,21 @@ class NotifyService:
             row.error = "接收人未配置手机号"
             return STATUS_SKIPPED
 
+        # 短信要真正发出，需同时满足两层开关：
+        #   1) 参数 notify.sms.enabled（决定是否入队，在 alert_service 判断）
+        #   2) 环境变量 PM_SMS_ENABLED + 网关地址（决定是否真发）
+        # 这里失败时把两层都说清楚，否则运维只看到「未启用」却不知道差哪一层。
         if not settings.sms_enabled or not settings.sms_provider:
             row.status = STATUS_SKIPPED
-            row.error = "未启用短信通道（PM_SMS_ENABLED / PM_SMS_PROVIDER）"
+            missing = []
+            if not settings.sms_enabled:
+                missing.append("PM_SMS_ENABLED=false")
+            if not settings.sms_provider:
+                missing.append("PM_SMS_PROVIDER 未配置")
+            row.error = (
+                "短信未发送：" + "、".join(missing)
+                + "（参数 notify.sms.enabled 已允许入队，但服务端未配置网关）"
+            )
             return STATUS_SKIPPED
 
         try:

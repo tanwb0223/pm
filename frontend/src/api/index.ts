@@ -41,6 +41,14 @@ export const authApi = {
       old_password: oldPassword,
       new_password: newPassword,
     }),
+  /** 我已绑定的第三方账号 */
+  myIdentities: () =>
+    get<
+      { provider: string; display_name: string; subject: string; last_login_at: string | null }[]
+    >('/auth/me/identities'),
+  /** 发起绑定第三方账号（已登录状态） */
+  startBind: (kind: string) =>
+    get<{ authorization_url: string; state: string }>(`/auth/bind/${kind}/start`),
 }
 
 // ================================================================ 认证管理（后台配置）

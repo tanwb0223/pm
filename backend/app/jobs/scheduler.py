@@ -278,6 +278,23 @@ def start_scheduler() -> None:
 
     _scheduler = BackgroundScheduler(timezone="Asia/Shanghai")
 
+    # 摘要时刻：参数优先（notify.digest.hour/minute），未配置时回落到环境变量。
+    # 原来只读 settings，导致参数配置页改这两项不生效。
+    digest_hour, digest_minute = settings.digest_hour, settings.digest_minute
+    try:
+        from app.db.session import SessionLocal
+        from app.services.config_service import ConfigService
+
+        _db = SessionLocal()
+        try:
+            _cfg = ConfigService(_db)
+            digest_hour = _cfg.get_int("notify.digest.hour", digest_hour)
+            digest_minute = _cfg.get_int("notify.digest.minute", digest_minute)
+        finally:
+            _db.close()
+    except Exception:
+        logger.warning("读取摘要时刻参数失败，沿用环境变量默认值", exc_info=True)
+
     # 每日 01:00 快照 + 扫描
     _scheduler.add_job(
         lambda: _with_lock(LOCK_SNAPSHOT_SCAN, job_daily_snapshot_and_scan),
@@ -302,7 +319,7 @@ def start_scheduler() -> None:
     # 每日 08:30 摘要
     _scheduler.add_job(
         lambda: _with_lock(LOCK_SNAPSHOT_SCAN + 3, job_daily_digest),
-        CronTrigger(hour=settings.digest_hour, minute=settings.digest_minute),
+        CronTrigger(hour=digest_hour, minute=digest_minute),
         id="daily_digest",
         replace_existing=True,
     )

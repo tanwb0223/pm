@@ -13,6 +13,7 @@ import {
   DownOutlined,
   FileTextOutlined,
   LockOutlined,
+  LinkOutlined,
   LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
@@ -27,6 +28,7 @@ import { Avatar, Badge, Button, Dropdown, Layout, Menu, Space, Tag, Typography }
 
 import { alertApi, authApi, collegeApi, majorApi } from '@/api'
 import ChangePasswordModal from '@/components/ChangePasswordModal'
+import BindAccountModal from '@/components/BindAccountModal'
 import { useAuthStore, useCan, useCanAny } from '@/stores/auth'
 import { clearQueryCache } from '@/lib/queryClient'
 import { useDictStore } from '@/stores/dict'
@@ -40,6 +42,7 @@ export default function AppLayout() {
   const [collapsed, setCollapsed] = useState(false)
   // 修改密码弹窗；forced 表示首次登录/被重置，必须改完才能继续
   const [pwdOpen, setPwdOpen] = useState(false)
+  const [bindOpen, setBindOpen] = useState(false)
   const [pwdForced, setPwdForced] = useState(false)
   const { user, setUser, resetSession, sessionKey } = useAuthStore()
   const setColleges = useDictStore((s) => s.setColleges)
@@ -284,6 +287,12 @@ export default function AppLayout() {
                   label: '修改密码',
                   onClick: () => setPwdOpen(true),
                 },
+                {
+                  key: 'bind',
+                  icon: <LinkOutlined />,
+                  label: '账号绑定',
+                  onClick: () => setBindOpen(true),
+                },
                 { type: 'divider' },
                 {
                   key: 'logout',
@@ -330,6 +339,8 @@ export default function AppLayout() {
           <Outlet />
         </Content>
       </Layout>
+
+      <BindAccountModal open={bindOpen} onClose={() => setBindOpen(false)} />
 
       <ChangePasswordModal
         open={pwdOpen}
