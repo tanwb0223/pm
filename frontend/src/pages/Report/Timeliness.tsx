@@ -82,19 +82,24 @@ export default function TimelinessPage() {
     { title: '类型', dataIndex: 'type_label', width: 80 },
     {
       title: '应报周期',
-      width: 230,
+      width: 215,
       render: (_, r) => (
-        <span style={{ whiteSpace: 'nowrap' }}>
+        <span className="cell-datetime">
           {fmtDate(r.period_start)} ~ {fmtDate(r.period_end)}
         </span>
       ),
     },
-    { title: '截止时间', dataIndex: 'deadline', width: 140, render: (v: string) => fmtDateTime(v) },
+    {
+      title: '截止时间',
+      dataIndex: 'deadline',
+      width: 140,
+      render: (v: string) => <span className="cell-datetime">{fmtDateTime(v)}</span>,
+    },
     {
       title: '提交时间',
       dataIndex: 'submitted_at',
       width: 140,
-      render: (v: string | null) => (v ? fmtDateTime(v) : '—'),
+      render: (v: string | null) => (v ? <span className="cell-datetime">{fmtDateTime(v)}</span> : '—'),
     },
     {
       title: '状态',
@@ -245,7 +250,7 @@ export default function TimelinessPage() {
       >
         <DataTable<TimelinessDetailRow>
           rowKey={(r) => `${r.sub_id}-${r.type}-${r.period_start}`}
-          size="small"
+          density="compact"
           loading={detailLoading}
           columns={columns}
           dataSource={detail?.items ?? []}

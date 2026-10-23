@@ -59,7 +59,7 @@ export default function AuditPage() {
       title: '时间',
       dataIndex: 'created_at',
       width: 160,
-      render: (v: string) => fmtDateTime(v),
+      render: (v: string) => <span className="cell-datetime">{fmtDateTime(v)}</span>,
     },
     {
       title: '操作人',
@@ -180,7 +180,6 @@ export default function AuditPage() {
             setPageSize(ps)
           },
         })}
-        size="middle"
       />
     </div>
   )

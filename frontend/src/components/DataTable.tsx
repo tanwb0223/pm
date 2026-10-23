@@ -3,10 +3,40 @@ import { Table } from 'antd'
 import type { TableProps } from 'antd'
 
 interface Props<T> extends TableProps<T> {
-  /** 表格最小宽度，等价于 scroll.x（列多时横向滚动） */
+  /**
+   * 表格最小宽度（px）。
+   *
+   * 默认不设下限，交给浏览器按内容自适应。只有内容过于稀疏、
+   * 希望兜一个下限时才传。注意：**不要**再用 `scroll.x` 手写数字，
+   * 手写值小于实际列宽时末列（通常是「操作」）会被裁掉。
+   */
   minTableWidth?: number
   /** 最小表体高度，避免窗口过小时压扁 */
   minBodyHeight?: number
+  /**
+   * 密度档位，默认 default。
+   *
+   * - `default`：页面主列表
+   * - `compact`：内嵌明细
+   *
+   * 全站只允许这两档，不要再传 antd 的 `size`。
+   */
+  density?: 'default' | 'compact'
+}
+
+/** 累加列声明的固定宽度，得到列宽下限 */
+function sumColumnWidth(columns: TableProps<any>['columns']): number {
+  if (!columns) return 0
+  let total = 0
+  for (const col of columns) {
+    if (!col) continue
+    const anyCol = col as { width?: number | string; children?: TableProps<any>['columns'] }
+    const w = anyCol.width
+    if (typeof w === 'number') total += w
+    else if (typeof w === 'string' && /^\d+(\.\d+)?(px)?$/.test(w)) total += parseFloat(w)
+    if (anyCol.children?.length) total += sumColumnWidth(anyCol.children)
+  }
+  return total
 }
 
 /**
@@ -17,6 +47,7 @@ interface Props<T> extends TableProps<T> {
  * 2. 表体滚动，只滚动内容区
  * 3. 分页固定在容器底部
  * 4. 数据不足一页时，表体仍撑满可用高度（不留白）
+ * 5. scroll.x 自动兜底，保证末列（通常是「操作」）不会被裁掉
  *
  * 用法：替换 `<Table>` 为 `<DataTable>`，把 `scroll={{ x: 1100 }}`
  * 改成 `minTableWidth={1100}`。父容器需要有确定高度
@@ -25,8 +56,12 @@ interface Props<T> extends TableProps<T> {
 export default function DataTable<T extends object>({
   minTableWidth,
   minBodyHeight = 120,
+  density = 'default',
   scroll,
   pagination,
+  columns,
+  expandable,
+  rowSelection,
   ...rest
 }: Props<T>) {
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -66,15 +101,32 @@ export default function DataTable<T extends object>({
     }
   }, [minBodyHeight, rest.dataSource, pagination])
 
+  // 横向策略：默认用 'max-content'，让浏览器按「表头文字 + 单元格内容」
+  // 的实际宽度排布，末列永远不会被裁掉；列总宽小于容器时由 CSS 拉伸铺满。
+  //
+  // 传了 minTableWidth 时才退回固定像素：这时 scroll.x 取
+  // max(下限, 列宽之和)，避免手写下限偏小把末列挤出去。
+  const minX =
+    minTableWidth !== undefined
+      ? Math.max(minTableWidth, sumColumnWidth(columns))
+      : 'max-content'
+
   const mergedScroll = {
     ...scroll,
-    ...(minTableWidth ? { x: minTableWidth } : {}),
+    x: minX,
     ...(bodyHeight > 0 ? { y: bodyHeight } : {}),
   }
 
   return (
     <div className="data-table-fill" ref={wrapRef}>
-      <Table<T> {...rest} scroll={mergedScroll} pagination={pagination} />
+      <Table<T>
+        {...rest}
+        columns={columns}
+        // 密度档位：default 用默认档字号/内边距，compact 走小尺寸档
+        size={density === 'compact' ? 'small' : 'large'}
+        scroll={mergedScroll}
+        pagination={pagination}
+      />
     </div>
   )
 }

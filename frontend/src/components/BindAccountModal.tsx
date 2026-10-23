@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Alert, Button, Modal, Space, Table, Tag, Tooltip, message } from 'antd'
+import { Alert, Button, Modal, Space, Tag, Tooltip, message } from 'antd'
 import { DisconnectOutlined, LinkOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 
+import Table from '@/components/Table'
 import { authAdminApi, authApi } from '@/api'
 
 interface Props {
@@ -99,7 +100,7 @@ export default function BindAccountModal({ open, onClose }: Props) {
           <div style={{ fontWeight: 600, marginBottom: 8 }}>已绑定</div>
           <Table<IdentityRow>
             rowKey="provider"
-            size="small"
+            density="compact"
             loading={isLoading}
             columns={columns}
             dataSource={identities ?? []}

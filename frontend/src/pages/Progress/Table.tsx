@@ -8,12 +8,10 @@ import {
   Input,
   InputNumber,
   Modal,
-  Progress,
   Select,
   Slider,
   Space,
   Switch,
-  Table,
   Tabs,
   Tag,
   Tooltip,
@@ -23,10 +21,11 @@ import type { ColumnsType } from 'antd/es/table'
 import { DownloadOutlined } from '@ant-design/icons'
 
 import DataTable from '@/components/DataTable'
+import Table from '@/components/Table'
 import PageHeader from '@/components/PageHeader'
 import AttachmentPanel from '@/components/AttachmentPanel'
 import SubTrendDrawer from '@/components/SubTrendDrawer'
-import { DeviationText, SubStatusTag } from '@/components/Tags'
+import { DeviationText, ProgressCell, SubStatusTag } from '@/components/Tags'
 import { exportApi, progressApi, subApi } from '@/api'
 import { SUB_STATUS_LABEL, fmtDate, fmtDateTime } from '@/lib/constants'
 import { useDictStore } from '@/stores/dict'
@@ -104,7 +103,7 @@ function RecordList({ subId }: { subId: number }) {
   return (
     <Table<ProgressRecord>
       rowKey="id"
-      size="small"
+      density="compact"
       loading={isLoading}
       columns={cols}
       dataSource={data ?? []}
@@ -243,18 +242,18 @@ export default function ProgressTablePage() {
     {
       title: '子项目',
       dataIndex: 'name',
-      width: 180,
+      width: 160,
       render: (_, r) => <b>{r.name}</b>,
     },
-    { title: '大项目', dataIndex: 'major_name', ellipsis: true, width: 170 },
-    { title: '学院', dataIndex: 'college_name', width: 110 },
-    { title: '负责人', dataIndex: 'owner_name', width: 90, render: (v: string | null) => v ?? '—' },
+    { title: '大项目', dataIndex: 'major_name', ellipsis: true, width: 150 },
+    { title: '学院', dataIndex: 'college_name', width: 116 },
+    { title: '负责人', dataIndex: 'owner_name', width: 80, render: (v: string | null) => v ?? '—' },
     {
       title: '计划起止',
-      width: 120,
+      width: 112,
       render: (_, r) =>
         r.has_plan ? (
-          <span style={{ fontSize: 12, lineHeight: 1.5 }}>
+          <span className="cell-datetime">
             {fmtDate(r.plan_start)}
             <br />~ {fmtDate(r.plan_end)}
           </span>
@@ -265,7 +264,7 @@ export default function ProgressTablePage() {
     {
       title: '时间进度',
       dataIndex: 'time_progress',
-      width: 90,
+      width: 80,
       render: (v: number | null) =>
         v === null ? <span style={{ color: '#9ca3af' }}>—</span> : `${v}%`,
     },
@@ -273,46 +272,33 @@ export default function ProgressTablePage() {
       title: '实际进度',
       dataIndex: 'current_progress',
       width: 130,
-      render: (v: number) => (
-        <Space size={6} style={{ width: '100%' }}>
-          <Progress
-            percent={v}
-            size="small"
-            showInfo={false}
-            style={{ width: 56, marginBottom: 0 }}
-            strokeColor={v >= 100 ? '#10b981' : v >= 60 ? '#4f46e5' : v >= 30 ? '#d48806' : '#ef4444'}
-          />
-          <span style={{ fontVariantNumeric: 'tabular-nums', minWidth: 32, textAlign: 'right' }}>
-            {v}%
-          </span>
-        </Space>
-      ),
+      render: (v: number) => <ProgressCell value={v} />,
     },
     {
       title: '偏差',
       dataIndex: 'deviation',
-      width: 70,
+      width: 64,
       render: (_, r) => <DeviationText value={r.deviation} />,
     },
-    { title: '状态', dataIndex: 'status', width: 90, render: (_, r) => <SubStatusTag status={r.status} /> },
+    { title: '状态', dataIndex: 'status', width: 84, render: (_, r) => <SubStatusTag status={r.status} /> },
     {
       title: '最近更新',
       dataIndex: 'last_update_at',
-      width: 110,
+      width: 112,
       render: (_, r) => {
         const d = fmtDate(r.last_update_at)
         return r.is_stagnant ? (
           <Tooltip title="超过21天未更新">
-            <span className="stale-value">{d}</span>
+            <span className="stale-value cell-datetime">{d}</span>
           </Tooltip>
         ) : (
-          d
+          <span className="cell-datetime">{d}</span>
         )
       },
     },
     {
       title: '操作',
-      width: 190,
+      width: 160,
       render: (_, r) => (
         <Space size={0}>
           {canUpdate && (
@@ -415,12 +401,11 @@ export default function ProgressTablePage() {
       </Space>
 
       <DataTable<ProgressRow>
-        className="progress-table"
         rowKey="id"
         loading={isFetching}
         columns={columns}
         dataSource={data?.items ?? []}
-        scroll={{ x: 1240 }}
+        minTableWidth={1180}
         expandable={{
           expandedRowRender: (r) => (
             <Tabs

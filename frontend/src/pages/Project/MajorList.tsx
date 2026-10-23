@@ -209,7 +209,7 @@ export default function MajorListPage() {
         </Link>
       ),
     },
-    { title: '类型', dataIndex: 'type', width: 140 },
+    { title: '类型', dataIndex: 'type', width: 168, ellipsis: true },
     { title: '合作企业', dataIndex: 'partner_company', width: 140, ellipsis: true },
     { title: '总负责人', dataIndex: 'owner_name', width: 100 },
     { title: '参与学院', dataIndex: 'college_count', width: 90, align: 'center' },

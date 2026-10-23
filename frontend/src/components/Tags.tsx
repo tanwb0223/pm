@@ -1,4 +1,4 @@
-import { Tag, Tooltip } from 'antd'
+import { Progress, Tag, Tooltip } from 'antd'
 
 import {
   ALERT_LEVEL_COLOR,
@@ -76,5 +76,38 @@ export function DeviationText({ value }: { value: number | null }) {
     <span style={{ color: deviationColor(value), fontWeight: Math.abs(value) >= 10 ? 600 : 400 }}>
       {value > 0 ? `+${value}` : value}
     </span>
+  )
+}
+
+/** 进度条的语义色：跑完绿、正常靛蓝、偏低橙、严重滞后红 */
+function progressColor(v: number) {
+  if (v >= 100) return '#10b981'
+  if (v >= 60) return '#4f46e5'
+  if (v >= 30) return '#d48806'
+  return '#ef4444'
+}
+
+/**
+ * 表格里的进度单元格（进度条 + 百分比）
+ *
+ * 全站统一同一个形态，避免各页面有的只有进度条、有的只有数字、
+ * 有的进度条宽度写死导致列宽一改就错位。
+ * 进度条用 flex 自适应单元格宽度，百分比右对齐等宽，纵向能对齐。
+ */
+export function ProgressCell({ value }: { value: number | null }) {
+  if (value === null || value === undefined) {
+    return <span style={{ color: '#9ca3af' }}>—</span>
+  }
+  return (
+    <div className="cell-progress">
+      <Progress
+        percent={value}
+        size="small"
+        showInfo={false}
+        strokeColor={progressColor(value)}
+        style={{ marginBottom: 0, flex: '1 1 auto', minWidth: 0 }}
+      />
+      <span className="cell-progress-value">{value}%</span>
+    </div>
   )
 }

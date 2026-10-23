@@ -52,8 +52,7 @@ body {
 
 /* 数字等宽，表格数字对齐更整齐 */
 .tabular-nums,
-.ant-statistic-content,
-.ant-table-cell {
+.ant-statistic-content {
   font-variant-numeric: tabular-nums;
 }
 
@@ -112,19 +111,54 @@ body {
   min-height: 52px;
 }
 
+.ant-card-small > .ant-card-head {
+  min-height: 46px;
+}
+
 .ant-card-head-title {
   font-weight: 600;
   color: var(--text-primary);
   letter-spacing: -0.01em;
 }
 
-/* 卡片内表格去掉多余边距 */
-.ant-card-body .ant-table-wrapper {
-  margin: -8px;
+/* 卡片内表格：让表格与卡片边缘对齐
+   ------------------------------------------------------------------
+   卡片头部和表格首列必须用同一个左内边距，否则标题会跟下面的表头
+   差几像素，看上去整块「错位」。
+
+   antd 默认：卡片头左右内边距 20px（small 为 12px），
+   而表格单元格左右内边距 16px（compact 为 12px）——
+   两者本来就不相等，所以这里按「卡片里放的是哪种表格」来对齐：
+   - 卡片内是内嵌明细表（compact，12px）→ 卡片头也用 12px
+   - 其余情况（主列表 16px）→ 卡片头用 16px
+   两个分支的取值都直接对应 tableDensity，别在这里另写数字。 */
+.ant-card > .ant-card-head {
+  padding-inline: 16px;
 }
 
-.ant-card-body:has(.ant-table-wrapper) {
-  padding: 8px;
+.ant-card.ant-card-small > .ant-card-head {
+  padding-inline: 12px;
+}
+
+/* 普通卡片里放的是 compact 表格时，标题缩进也跟到 12px */
+.ant-card:not(.ant-card-small):has(.ant-card-body .ant-table-small) > .ant-card-head {
+  padding-inline: 12px;
+}
+
+/* 卡片正文只有表格时去掉内边距，让表格自己贴边 */
+.ant-card-body:has(> .ant-table-wrapper:only-child),
+.ant-card-body:has(> .data-table-fill:only-child) {
+  padding: 0;
+}
+
+.ant-card-body > .ant-table-wrapper,
+.ant-card-body > .data-table-fill {
+  margin: 0;
+}
+
+/* 表格底部贴着卡片底边：分页条自己带内边距 */
+.ant-card:has(> .ant-card-body > .data-table-fill) > .ant-card-body {
+  padding-bottom: 0;
 }
 
 /* ==========================================================================
@@ -229,42 +263,171 @@ body {
 
 /* ==========================================================================
    表格
+   --------------------------------------------------------------------------
+   全站表格只认这一处样式。页面里不要再写 size / padding / fontSize 覆盖。
+
+   约定：
+   - 字号、内边距、行高三者由主题 token（styles/theme.ts 的 tableDensity）
+     统一给出，这里只做「表头与表体对齐」的收口。
+   - 表头和表体的字体大小、左右内边距必须完全一致，否则会出现表头文字
+     与单元格错位的观感问题。
+   - 不再使用 !important 覆盖 antd；如需调整走组件 token。
    ========================================================================== */
 
-.ant-table {
-  font-size: 13.5px;
+/* 数字等宽，金额/日期/百分比纵向对齐 */
+.ant-table-cell {
+  font-variant-numeric: tabular-nums;
 }
 
+/* 表头：统一字重 600、次级字色、浅灰底，不加粗到发黑 */
 .ant-table-thead > tr > th {
-  font-weight: 600 !important;
-  font-size: 12.5px !important;
-  text-transform: none;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: #fafbfc;
+  border-bottom: 1px solid var(--border);
   letter-spacing: 0.01em;
-  color: var(--text-secondary) !important;
-  background: #fafbfc !important;
-  border-bottom: 1px solid var(--border) !important;
+  white-space: nowrap;
+}
+
+/* 日期时间字符串不允许折行
+   ------------------------------------------------------------------
+   「2026-10-28 11:05」这类文本折断成两行后既难读又会把整行撑高，
+   而按列宽逐个调太脆：换个数据就可能再折。日期时间是定长文本，
+   统一禁止折行，列宽不够时让父容器横向滚动。 */
+.ant-table-cell .cell-datetime,
+.ant-table-cell .cell-num {
+  white-space: nowrap;
+}
+
+/* 进度单元格：进度条自适应列宽，百分比定宽右对齐，跨行纵向对齐 */
+.cell-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.cell-progress .ant-progress {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-bottom: 0;
+  line-height: 1;
+}
+
+.cell-progress-value {
+  flex: 0 0 auto;
+  min-width: 34px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 排序/筛选激活时不把表头底色染得更深，只保留图标变色 */
+.ant-table-thead > tr > th.ant-table-column-sort,
+.ant-table-thead > tr > th.ant-table-column-has-sorters:hover {
+  background: #f3f4f6;
 }
 
 .ant-table-tbody > tr > td {
-  border-bottom: 1px solid var(--border-light) !important;
+  border-bottom: 1px solid var(--border-light);
 }
 
+/* 最后一行不画分隔线，避免与卡片圆角叠出双线 */
 .ant-table-tbody > tr:last-child > td {
-  border-bottom: none !important;
+  border-bottom: none;
 }
 
 .ant-table-tbody > tr.ant-table-row:hover > td {
-  background: var(--brand-lighter) !important;
+  background: var(--brand-lighter);
 }
 
-/* 进度总表：紧凑行高 */
-.progress-table .ant-table-tbody > tr > td {
-  padding: 10px 12px !important;
-}
-
-/* 展开行背景 */
+/* 展开行：留白比普通行大一些，内容不贴边 */
 .ant-table-expanded-row > td {
-  background: #fafbfc !important;
+  background: #fafbfc;
+  padding: 16px 20px;
+}
+
+.ant-table-expanded-row > td > .ant-table-wrapper {
+  background: #fff;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  padding: 4px 12px;
+}
+
+/* 可点击行 */
+.ant-table-tbody > tr.clickable-row > td {
+  cursor: pointer;
+}
+
+/* 空状态内边距收紧一点，避免整块留白过大 */
+.ant-table-placeholder > td {
+  padding: 32px 16px;
+}
+
+/* 表头与单元格里的操作按钮：收紧成行内文字链，不撑高行 */
+.ant-table-cell .ant-btn-link {
+  padding-inline: 4px;
+  height: auto;
+  line-height: 1.5;
+}
+
+/* 单元格内的多个操作按钮之间不要挤在一起 */
+.ant-table-cell .ant-space {
+  row-gap: 0;
+  column-gap: 4px;
+}
+
+/* -------------------------------------------------- 内嵌表格（展开行/弹窗） */
+/* 嵌套表格自己不需要再画一次外边框，交给父层 */
+.ant-table-tbody .ant-table-wrapper .ant-table {
+  border-radius: var(--radius);
+}
+
+/* 表格自带页脚（footer 插槽）时，与表体之间保持统一的分割线 */
+.ant-table-footer {
+  background: #fafbfc;
+  border-top: 1px solid var(--border-light);
+  padding: 10px 16px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+/* 表格自带页脚时，分页条紧贴页脚下方，不再多画一条顶线 */
+.ant-table-footer + .ant-table-pagination.ant-pagination,
+.ant-table-wrapper > .ant-table-pagination.ant-pagination {
+  border-top: none;
+}
+
+.ant-table-wrapper > .ant-table + .ant-table-footer + .ant-table-pagination.ant-pagination {
+  border-top: 1px solid var(--border-light);
+}
+
+/* -------------------------------------------------- 分页条 */
+/* 统一：计数在左、页码在右、与表格之间一条细分割线、上下等距 */
+.ant-table-wrapper .ant-table-pagination.ant-pagination {
+  margin: 0;
+  padding: 12px 20px;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  background: #fff;
+  border-top: 1px solid var(--border-light);
+}
+
+.ant-table-wrapper .ant-table-pagination .ant-pagination-total-text {
+  margin-inline-end: auto;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.ant-table-wrapper .ant-table-pagination .ant-pagination-item,
+.ant-table-wrapper .ant-table-pagination .ant-pagination-prev,
+.ant-table-wrapper .ant-table-pagination .ant-pagination-next {
+  min-width: 30px;
+  height: 30px;
+  line-height: 28px;
+  margin-inline-end: 6px;
 }
 
 /* ==========================================================================
@@ -644,38 +807,30 @@ body {
   border-radius: 0;
 }
 
+/* 表体横向滚动时，底部会出现一条原生横向滚动条；它的高度会被算进
+   scroll.y 里，导致表体比预期少一行。这里统一去掉原生横向滚动条，
+   改用表体滚动 + 表头同步（antd 内部已处理同步滚动）。 */
 .data-table-fill .ant-table-body {
   overflow-y: auto !important;
+  overflow-x: auto;
+  scrollbar-gutter: stable;
 }
 
-/* 分页固定底部 */
+.data-table-fill .ant-table-header {
+  overflow: hidden;
+}
+
+/* 表头内的 table 需要跟表体一起横向位移，antd 通过 transform 实现，
+   这里只需保证表头容器不出现第二条滚动条 */
+.data-table-fill .ant-table-header::-webkit-scrollbar {
+  display: none;
+}
+
+/* 分页固定底部（外观统一由上面的 .ant-table-pagination 规则给出，
+   这里只负责「贴底不被压缩」） */
 .data-table-fill .ant-table-pagination.ant-pagination {
   flex-shrink: 0;
-  margin: 0 !important;
-  padding: 8px 20px;
-  min-height: 44px;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  background: #fff;
-  border-top: 1px solid var(--border-light);
   border-radius: 0 0 var(--radius-lg) var(--radius-lg);
-}
-
-/* 分页项更紧凑 */
-.data-table-fill .ant-table-pagination .ant-pagination-item,
-.data-table-fill .ant-table-pagination .ant-pagination-prev,
-.data-table-fill .ant-table-pagination .ant-pagination-next {
-  min-width: 28px;
-  height: 28px;
-  line-height: 26px;
-  margin-inline-end: 6px;
-}
-
-.data-table-fill .ant-table-pagination .ant-pagination-total-text {
-  margin-inline-end: 12px;
-  font-size: 13px;
-  color: var(--text-secondary);
 }
 
 /* 表格在卡片内时，去掉卡片内边距让表头贴合 */

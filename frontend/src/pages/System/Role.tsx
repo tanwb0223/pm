@@ -13,7 +13,6 @@ import {
   Result,
   Select,
   Space,
-  Table,
   Tabs,
   Tag,
 } from 'antd'
@@ -22,6 +21,7 @@ import dayjs, { type Dayjs } from 'dayjs'
 import type { ColumnsType } from 'antd/es/table'
 
 import PageHeader from '@/components/PageHeader'
+import Table from '@/components/Table'
 import { collegeApi, majorApi, systemApi } from '@/api'
 import { useAuthStore, useCan } from '@/stores/auth'
 
@@ -142,7 +142,14 @@ function RoleTab({ canWrite }: { canWrite: boolean }) {
           一期自定义角色上限 3 个（不含系统内置）
         </span>
       </div>
-      <Table rowKey="id" columns={columns} dataSource={roles ?? []} loading={isLoading} pagination={false} />
+      <Table
+        rowKey="id"
+        density="compact"
+        columns={columns}
+        dataSource={roles ?? []}
+        loading={isLoading}
+        pagination={false}
+      />
 
       <Modal
         title="新增自定义角色"
@@ -306,7 +313,14 @@ function GrantTab({ canWrite }: { canWrite: boolean }) {
         )}
       </Space>
 
-      <Table rowKey="id" columns={columns} dataSource={grants ?? []} loading={isLoading} pagination={false} />
+      <Table
+        rowKey="id"
+        density="compact"
+        columns={columns}
+        dataSource={grants ?? []}
+        loading={isLoading}
+        pagination={false}
+      />
 
       <Modal
         title="新增授权"
@@ -508,7 +522,7 @@ function PermTab({ canWrite }: { canWrite: boolean }) {
         grouped.map(([type, list]) => (
           <div key={type} style={{ marginBottom: 24 }}>
             <div style={{ fontWeight: 600, marginBottom: 8 }}>{PERM_TYPE_LABEL[type] ?? type}</div>
-            <Table rowKey="id" columns={columns} dataSource={list} pagination={false} />
+            <Table rowKey="id" density="compact" columns={columns} dataSource={list} pagination={false} />
           </div>
         ))
       )}

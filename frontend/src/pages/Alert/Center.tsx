@@ -10,7 +10,6 @@ import {
   Modal,
   Select,
   Space,
-  Table,
   Tag,
   Tooltip,
   message,
@@ -19,6 +18,7 @@ import type { ColumnsType } from 'antd/es/table'
 import { ScanOutlined } from '@ant-design/icons'
 
 import DataTable from '@/components/DataTable'
+import Table from '@/components/Table'
 import PageHeader from '@/components/PageHeader'
 import { AlertLevelTag, AlertStatusTag, AlertTypeTag } from '@/components/Tags'
 import { alertApi, systemApi } from '@/api'
@@ -157,8 +157,8 @@ export default function AlertCenterPage() {
     const left = daysLeft(a.deadline_at)
     const overdue = left !== null && left < 0
     return (
-      <Space size={4}>
-        <span>{fmtDateTime(a.deadline_at)}</span>
+      <Space size={6} wrap={false}>
+        <span className="cell-datetime">{fmtDateTime(a.deadline_at)}</span>
         {left !== null && (
           <Tag color={overdue ? 'red' : left <= 1 ? 'orange' : 'default'} style={{ marginRight: 0 }}>
             {overdue ? `超期 ${Math.abs(left)} 天` : `剩 ${left} 天`}
@@ -178,8 +178,13 @@ export default function AlertCenterPage() {
       ellipsis: true,
       render: (v: string | null) => v ?? '—',
     },
-    { title: '触发时间', dataIndex: 'trigger_at', width: 140, render: (v: string) => fmtDateTime(v) },
-    { title: '处置截止', dataIndex: 'deadline_at', width: 190, render: (_, r) => deadlineCell(r) },
+    {
+      title: '触发时间',
+      dataIndex: 'trigger_at',
+      width: 150,
+      render: (v: string) => <span className="cell-datetime">{fmtDateTime(v)}</span>,
+    },
+    { title: '处置截止', dataIndex: 'deadline_at', width: 230, render: (_, r) => deadlineCell(r) },
     {
       title: '合并',
       dataIndex: 'merged_count',
@@ -319,7 +324,7 @@ export default function AlertCenterPage() {
           </Space>
           <Table<AlertGroup>
             rowKey={(r) => `${r.major_id ?? 0}-${r.college_id ?? 0}`}
-            size="small"
+            density="compact"
             columns={groupColumns}
             dataSource={grouped.groups}
             pagination={false}
@@ -382,7 +387,7 @@ export default function AlertCenterPage() {
         loading={isFetching}
         columns={columns}
         dataSource={data?.items ?? []}
-        minTableWidth={1200}
+        minTableWidth={1320}
         pagination={tablePagination({
           current: page,
           pageSize: PAGE_SIZE,

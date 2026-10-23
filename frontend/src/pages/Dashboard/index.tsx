@@ -1,10 +1,11 @@
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Button, Card, Col, Empty, Row, Space, Table, Tag } from 'antd'
+import { Button, Card, Col, Empty, Row, Space, Tag } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 
 import { alertApi, reportApi, subApi } from '@/api'
 import PageHeader from '@/components/PageHeader'
+import Table from '@/components/Table'
 import { AlertLevelTag, AlertStatusTag, AlertTypeTag } from '@/components/Tags'
 import { REPORT_TYPE_LABEL, daysLeft, fmtDateTime } from '@/lib/constants'
 import type { Alert, PendingReport } from '@/types'
@@ -44,7 +45,7 @@ export default function DashboardPage() {
       dataIndex: 'trigger_at',
       key: 'trigger_at',
       width: 150,
-      render: (v: string) => fmtDateTime(v),
+      render: (v: string) => <span className="cell-datetime">{fmtDateTime(v)}</span>,
     },
     {
       title: '处置时限',
@@ -95,7 +96,7 @@ export default function DashboardPage() {
         }
         return (
           <Space direction="vertical" size={0}>
-            <span>{fmtDateTime(v)}</span>
+            <span className="cell-datetime">{fmtDateTime(v)}</span>
             <Tag color="blue">
               {r.days_left <= 0 ? '今日截止' : `还剩 ${r.days_left} 天`}
             </Tag>
@@ -160,8 +161,7 @@ export default function DashboardPage() {
           loading={todoLoading}
           pagination={false}
           locale={{ emptyText: <Empty description="暂无待办" /> }}
-        />
-      </Card>
+        />      </Card>
 
       {/* 待填报表 */}
       <Card title="待填报表">
@@ -172,8 +172,7 @@ export default function DashboardPage() {
           loading={pendingLoading}
           pagination={false}
           locale={{ emptyText: <Empty description="暂无待办" /> }}
-        />
-      </Card>
+        />      </Card>
     </div>
   )
 }

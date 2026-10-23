@@ -13,7 +13,6 @@ import {
   Result,
   Select,
   Space,
-  Table,
   Tag,
   Typography,
 } from 'antd'
@@ -22,6 +21,7 @@ import dayjs, { type Dayjs } from 'dayjs'
 import type { ColumnsType } from 'antd/es/table'
 
 import PageHeader from '@/components/PageHeader'
+import Table from '@/components/Table'
 import { systemApi } from '@/api'
 import { PAGE_SIZE, tablePagination } from '@/lib/pagination'
 import { useAuthStore, useCan } from '@/stores/auth'

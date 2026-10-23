@@ -83,6 +83,49 @@ export const statusColors = {
   default: '#9ca3af',
 }
 
+// ================================================================ 表格规范
+/**
+ * 表格设计规范（全站唯一来源）
+ *
+ * 页面里**不要**再写 `size`、单元格 padding、`fontSize` 覆盖；
+ * 需要更紧凑时统一用 `<Table density="compact">`（见 components/Table.tsx）。
+ *
+ * 只有两档密度：
+ * - default：主列表（页面级的数据列表）
+ * - compact：内嵌明细（展开行、弹窗内、卡片内的小表、权限矩阵）
+ *
+ * 字号与内边距同时作用于表头和表体 —— 两边字号/缩进必须完全一致，
+ * 否则表头文字会和下面的单元格错位（这是之前 progress-table 的问题）。
+ *
+ * 两档的**字号保持一致**，只有内边距变紧：主列表和展开行里的表格
+ * 挨在一起时，文字大小跳变比行高变化更扎眼。
+ */
+export const tableFontSize = 13.5
+
+export const tableDensity = {
+  default: {
+    /** 单元格上下内边距 */
+    paddingBlock: 10,
+    /** 单元格左右内边距 */
+    paddingInline: 16,
+  },
+  compact: {
+    paddingBlock: 8,
+    paddingInline: 12,
+  },
+}
+
+/** 表格配色与形态 */
+export const tableStyle = {
+  headerBg: '#fafbfc',
+  headerColor: neutral.textSecondary,
+  /** 表头不画竖分隔线，靠背景色区分 */
+  headerSplitColor: 'transparent',
+  borderColor: neutral.borderLight,
+  rowHoverBg: brand.primaryLighter,
+  rowExpandedBg: '#fafbfc',
+}
+
 // ================================================================ 圆角与阴影
 export const radius = {
   sm: 6,
@@ -173,13 +216,31 @@ export const antdTheme = {
     },
 
     Table: {
-      headerBg: '#fafbfc',
-      headerColor: neutral.textSecondary,
-      headerSplitColor: 'transparent',
-      rowHoverBg: brand.primaryLighter,
-      borderColor: neutral.borderLight,
-      cellPaddingBlock: 12,
+      headerBg: tableStyle.headerBg,
+      headerColor: tableStyle.headerColor,
+      headerSplitColor: tableStyle.headerSplitColor,
+      borderColor: tableStyle.borderColor,
+      rowHoverBg: tableStyle.rowHoverBg,
+      rowExpandedBg: tableStyle.rowExpandedBg,
+      // 排序列表头底色跟随表头，避免点一下排序表头变灰
+      headerSortActiveBg: tableStyle.headerBg,
+      headerSortHoverBg: '#f3f4f6',
+      bodySortBg: 'transparent',
+
       headerBorderRadius: radius.base,
+
+      // 默认档 = 主列表。两档内边距之外的尺寸全部对齐到同一套字号，
+      // 这样无论页面写 size 与否，看起来都一样。
+      cellFontSize: tableFontSize,
+      cellFontSizeMD: tableFontSize,
+      cellFontSizeSM: tableFontSize,
+
+      cellPaddingBlock: tableDensity.default.paddingBlock,
+      cellPaddingInline: tableDensity.default.paddingInline,
+      cellPaddingBlockMD: tableDensity.default.paddingBlock,
+      cellPaddingInlineMD: tableDensity.default.paddingInline,
+      cellPaddingBlockSM: tableDensity.compact.paddingBlock,
+      cellPaddingInlineSM: tableDensity.compact.paddingInline,
     },
 
     Card: {

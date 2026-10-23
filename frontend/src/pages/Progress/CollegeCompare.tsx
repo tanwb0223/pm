@@ -271,7 +271,7 @@ export default function CollegeComparePage() {
       <Card title="明细" size="small">
         <DataTable<CollegeCompareRow>
           rowKey="college_id"
-          size="small"
+          density="compact"
           loading={isLoading}
           columns={columns}
           dataSource={data}

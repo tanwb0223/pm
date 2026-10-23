@@ -80,7 +80,7 @@ export default function NotifyLogPage() {
       title: '时间',
       dataIndex: 'sent_at',
       width: 160,
-      render: (v: string) => fmtDateTime(v),
+      render: (v: string) => <span className="cell-datetime">{fmtDateTime(v)}</span>,
     },
     {
       title: '通道',

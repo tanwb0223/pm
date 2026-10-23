@@ -307,7 +307,7 @@ function ReportFillPageInner() {
       dataIndex: 'deadline',
       key: 'deadline',
       width: 150,
-      render: (v: string) => fmtDateTime(v),
+      render: (v: string) => <span className="cell-datetime">{fmtDateTime(v)}</span>,
     },
     {
       title: '操作',
@@ -375,7 +375,7 @@ function ReportFillPageInner() {
           >
             <DataTable<PendingReport>
               rowKey={(r) => `${r.sub_id}-${r.type}-${r.period_start}`}
-              size="small"
+              density="compact"
               loading={pendingLoading}
               columns={pendingColumns}
               dataSource={pendingShown}

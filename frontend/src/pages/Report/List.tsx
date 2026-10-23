@@ -112,7 +112,7 @@ export default function ReportListPage() {
       dataIndex: 'submitted_at',
       key: 'submitted_at',
       width: 150,
-      render: (v: string | null) => fmtDateTime(v),
+      render: (v: string | null) => <span className="cell-datetime">{fmtDateTime(v)}</span>,
     },
     {
       title: '更正',

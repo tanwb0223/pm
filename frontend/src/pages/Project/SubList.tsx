@@ -10,17 +10,15 @@ import {
   message,
   Modal,
   Popconfirm,
-  Progress,
   Select,
   Space,
-  Table,
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import dayjs, { type Dayjs } from 'dayjs'
 
 import DataTable from '@/components/DataTable'
 import PageHeader from '@/components/PageHeader'
-import { SubStatusTag } from '@/components/Tags'
+import { ProgressCell, SubStatusTag } from '@/components/Tags'
 import { majorApi, subApi, systemApi } from '@/api'
 import { SUB_STATUS_LABEL, fmtDate } from '@/lib/constants'
 import { PAGE_SIZE, tablePagination } from '@/lib/pagination'
@@ -259,7 +257,7 @@ export default function SubListPage() {
       title: '进度',
       dataIndex: 'current_progress',
       width: 140,
-      render: (v: number) => <Progress percent={v} size="small" />,
+      render: (v: number) => <ProgressCell value={v} />,
     },
     {
       title: '状态',

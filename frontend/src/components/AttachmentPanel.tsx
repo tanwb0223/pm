@@ -6,7 +6,6 @@ import {
   Empty,
   Popconfirm,
   Space,
-  Table,
   Tag,
   Tooltip,
   Upload,
@@ -22,6 +21,7 @@ import type { ColumnsType } from 'antd/es/table'
 import type { UploadFile } from 'antd'
 
 import { attachmentApi, type AttachmentItem } from '@/api'
+import Table from '@/components/Table'
 import { fmtDateTime } from '@/lib/constants'
 
 interface Props {
@@ -232,7 +232,7 @@ export default function AttachmentPanel({ bizType, bizId, readOnly = false }: Pr
 
       <Table<AttachmentItem>
         rowKey="id"
-        size="small"
+        density="compact"
         loading={isLoading}
         columns={columns}
         dataSource={data}

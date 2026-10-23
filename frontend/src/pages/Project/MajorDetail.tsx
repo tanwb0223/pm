@@ -12,16 +12,15 @@ import {
   message,
   Modal,
   Popconfirm,
-  Progress,
   Select,
   Space,
   Spin,
-  Table,
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 
 import PageHeader from '@/components/PageHeader'
-import { MajorStatusTag, SubStatusTag } from '@/components/Tags'
+import Table from '@/components/Table'
+import { MajorStatusTag, ProgressCell, SubStatusTag } from '@/components/Tags'
 import { collegeApi, majorApi, subApi, systemApi } from '@/api'
 import { fmtDate } from '@/lib/constants'
 import { useCan } from '@/stores/auth'
@@ -199,7 +198,7 @@ export default function MajorDetailPage() {
       title: '进度',
       dataIndex: 'current_progress',
       width: 150,
-      render: (v: number) => <Progress percent={v} size="small" />,
+      render: (v: number) => <ProgressCell value={v} />,
     },
     {
       title: '状态',
@@ -318,7 +317,7 @@ export default function MajorDetailPage() {
       >
         <Table<MajorCollege>
           rowKey="college_id"
-          size="small"
+          density="compact"
           loading={collegesLoading}
           columns={collegeColumns}
           dataSource={colleges ?? []}
@@ -330,8 +329,7 @@ export default function MajorDetailPage() {
       <Card title={`子项目（${subs?.total ?? 0}）`}>
         <Table<Sub>
           rowKey="id"
-          size="small"
-          className="progress-table"
+          density="compact"
           loading={subsLoading}
           columns={subColumns}
           dataSource={subs?.items ?? []}

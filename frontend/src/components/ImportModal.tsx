@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { Alert, App, Button, Modal, Space, Switch, Table, Tag, Upload } from 'antd'
+import { Alert, App, Button, Modal, Space, Switch, Tag, Upload } from 'antd'
 import { DownloadOutlined, InboxOutlined } from '@ant-design/icons'
 import type { UploadFile } from 'antd'
 
+import Table from '@/components/Table'
 import { systemApi } from '@/api'
 import type { ImportResult } from '@/types'
 
@@ -152,7 +153,7 @@ export default function ImportModal({ open, kind, onClose, onSuccess }: Props) {
             </Space>
             {result.error_count > 0 && (
               <Table
-                size="small"
+                density="compact"
                 rowKey="row"
                 pagination={false}
                 scroll={{ y: 180 }}
