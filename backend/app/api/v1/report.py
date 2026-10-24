@@ -6,12 +6,14 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.deps import CurrentUser, get_current_user, require_perm
 from app.core.response import ok, page
-from app.core.scope import assert_report_access, assert_sub_access
+from app.core.scope import apply_scope, assert_report_access, assert_sub_access
 from app.db.session import get_db
+from app.models.project import ProjMajor, ProjSub
 from app.services.project_service import ProjectService
 from app.services.report_service import ReportService
 
@@ -44,6 +46,10 @@ class ReportIn(BaseModel):
     period_start: date | None = Field(default=None, description="所属周期（不填用今天）")
     progress: int | None = Field(default=None, ge=0, le=100, description="顺带更新进度")
     content: dict[str, Any] = Field(description="按报表类型填不同字段")
+    # 代填：操作人不是子项目负责人时，显式指定「替谁交」（必须等于子项目负责人）
+    on_behalf_of: int | None = Field(
+        default=None, description="代填对象（子项目负责人 id）；本人填报时留空"
+    )
 
 
 class VoidIn(BaseModel):
@@ -68,6 +74,8 @@ def _out(r) -> dict:
         "status": r.status,
         "submitted_at": r.submitted_at,
         "submitted_by": r.submitted_by,
+        # 代填对象：前端据此显示「由 XX 代填」，及时率也按此归属
+        "on_behalf_of": r.on_behalf_of,
         "correct_count": r.correct_count,
         "void_reason": r.void_reason,
         "voided_at": r.voided_at,
@@ -87,7 +95,13 @@ def submit_report(
 ):
     svc = ReportService(db)
     rep = svc.submit(
-        body.sub_id, body.type, body.content, body.progress, user, body.period_start
+        body.sub_id,
+        body.type,
+        body.content,
+        body.progress,
+        user,
+        body.period_start,
+        on_behalf_of=body.on_behalf_of,
     )
     db.commit()
     return ok({"id": rep.id, "status": rep.status})
@@ -153,7 +167,7 @@ def pending_reports(
     return ok(svc.pending_list(user, day, include_upcoming, upcoming_days))
 
 
-# ---------------------------------------------------------------- 补填放行
+# ---------------------------------------------------------------- 补填 / 更正放行
 class GraceIn(BaseModel):
     sub_id: int
     type: str = Field(pattern="^(DAILY|WEEKLY|MONTHLY)$")
@@ -162,20 +176,27 @@ class GraceIn(BaseModel):
     )
     reason: str = Field(min_length=1, max_length=500, description="开启理由")
     days: int = Field(default=7, ge=1, le=90, description="放行有效天数")
+    # 放行类型：BACKFILL=逾期补填（默认），CORRECT=超期更正
+    kind: str = Field(
+        default="BACKFILL",
+        pattern="^(BACKFILL|CORRECT)$",
+        description="BACKFILL 补填放行 / CORRECT 更正放行",
+    )
 
 
-@router.get("/reports/graces", summary="补填放行记录")
+@router.get("/reports/graces", summary="补填 / 更正放行记录")
 def list_graces(
     sub_id: int | None = None,
+    kind: str | None = Query(default=None, pattern="^(BACKFILL|CORRECT)$"),
     user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    return ok(ReportService(db).list_graces(user, sub_id))
+    return ok(ReportService(db).list_graces(user, sub_id, kind))
 
 
 @router.post(
     "/reports/graces",
-    summary="开启逾期补填",
+    summary="开启逾期补填 / 超期更正",
     dependencies=[Depends(require_perm("report:grant"))],
 )
 def grant_grace(
@@ -183,9 +204,9 @@ def grant_grace(
     user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """文档 4.3：月报超过 3 天，需学院负责人开启才能补填
+    """文档 4.3 / 3.4：月报超过 3 天需学院负责人开启补填；更正超期同理
 
-    放行有有效期（默认 7 天），到期自动失效。
+    放行有有效期（默认 7 天），到期自动失效；kind 区分补填与更正。
     """
     svc = ReportService(db)
     result = svc.grant_grace(
@@ -195,6 +216,7 @@ def grant_grace(
         reason=body.reason,
         days=body.days,
         operator=user,
+        kind=body.kind,
     )
     db.commit()
     return ok(result)
@@ -223,11 +245,14 @@ def timeliness(
     end: date,
     type: str | None = Query(default=None, pattern="^(DAILY|WEEKLY|MONTHLY)$"),
     major_id: int | None = None,
+    owner_id: int | None = Query(default=None, description="按归属人筛选（代填算被代填人）"),
     user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     svc = ReportService(db)
-    data = svc.timeliness(user, start=start, end=end, rtype=type, major_id=major_id)
+    data = svc.timeliness(
+        user, start=start, end=end, rtype=type, major_id=major_id, owner_id=owner_id
+    )
     # detail_all 仅内部使用，不返回给前端
     data.pop("detail_all", None)
     return ok(data)
@@ -239,6 +264,7 @@ def timeliness_detail(
     end: date,
     type: str | None = Query(default=None, pattern="^(DAILY|WEEKLY|MONTHLY)$"),
     major_id: int | None = None,
+    owner_id: int | None = None,
     state: str | None = Query(default=None, pattern="^(MISSING|LATE|ON_TIME)$"),
     page_no: int = Query(default=1, ge=1, alias="page"),
     page_size: int = Query(default=20, ge=1, le=500),
@@ -253,6 +279,7 @@ def timeliness_detail(
         rtype=type,
         major_id=major_id,
         state=state,
+        owner_id=owner_id,
         page=page_no,
         page_size=page_size,
     )
@@ -265,15 +292,44 @@ def report_options(
     user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """供填报页使用：哪些报表类型是启用的
+    """供填报页使用：哪些报表类型是启用的、哪些项目单独开了日报
 
-    日报由参数 report.daily.enabled 控制（默认关闭）。这个接口只读、登录即可访问，
+    日报由「全局参数 report.daily.enabled」或「项目 ProjMajor.daily_report_enabled」
+    控制（需求 6.1 第 5 项：默认关、试点项目打开）。这个接口只读、登录即可访问，
     避免普通填报人为了读一个开关而去申请 system:config 权限。
     """
     svc = ReportService(db)
-    daily_enabled = svc.config.get_bool("report.daily.enabled", False)
-    types = (["DAILY"] if daily_enabled else []) + ["WEEKLY", "MONTHLY"]
-    return ok({"types": types, "daily_enabled": daily_enabled})
+    daily_enabled = svc.global_daily_enabled()
+
+    # 按当前用户可选项目返回「单独开了日报」的项目 id 列表，
+    # 前端据此决定给哪些项目显示日报入口（不再只看全局开关）。
+    sub_stmt = select(ProjSub.id).where(ProjSub.deleted_at.is_(None))
+    sub_stmt = apply_scope(sub_stmt, user, ProjSub)
+    visible_sub_ids = set(svc.db.scalars(sub_stmt))
+    major_ids: set[int] = set()
+    if visible_sub_ids:
+        for sub in svc.db.scalars(
+            select(ProjSub).where(ProjSub.id.in_(visible_sub_ids))
+        ):
+            if sub.major_id is not None:
+                major_ids.add(sub.major_id)
+    daily_major_ids: list[int] = []
+    if major_ids:
+        for m in svc.db.scalars(select(ProjMajor).where(ProjMajor.id.in_(major_ids))):
+            if m.daily_report_enabled is True:
+                daily_major_ids.append(m.id)
+
+    types = ["WEEKLY", "MONTHLY"]
+    if daily_enabled or daily_major_ids:
+        types.insert(0, "DAILY")
+    return ok(
+        {
+            "types": types,
+            "daily_enabled": daily_enabled,
+            # 单独开启日报的项目（None 表示跟随全局，不在此列）
+            "daily_enabled_major_ids": sorted(daily_major_ids),
+        }
+    )
 
 
 # ---------------------------------------------------------------- 周期辅助
@@ -297,6 +353,21 @@ def period_info(
             "can_submit": deadline is not None,
         }
     )
+
+
+@router.get("/reports/{report_id}/correctable", summary="该报表当前是否可更正")
+def report_correctable(
+    report_id: int,
+    user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """供前端决定是否显示「更正」按钮（需求 3.4）
+
+    返回 {can_correct, reason, correct_days, days_left}：
+    - 提交后 correct_days 天内可自行更正（days_left 为剩余天数）
+    - 超期需学院负责人开启 CORRECT 放行
+    """
+    return ok(ReportService(db).correctable(report_id, user))
 
 
 @router.get("/reports/{report_id}", summary="报表详情")

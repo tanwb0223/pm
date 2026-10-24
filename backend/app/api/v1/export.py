@@ -1,10 +1,11 @@
 """导出 API：项目台账、进度报表、报表材料"""
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
@@ -21,6 +22,8 @@ from app.services.export_service import (
 from app.services.progress_service import ProgressService
 from app.services.project_service import ProjectService
 from app.services.report_service import ReportService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/export", tags=["数据导出"])
 
@@ -54,9 +57,30 @@ def _pick_fields(all_fields: list[tuple[str, str]], wanted: str | None) -> list[
     return picked or all_fields
 
 
+def _mark_export(request: Request, rows: list[dict], picked: list[tuple[str, str]]) -> None:
+    """把本次导出的条数与字段写入 request.state，供审计中间件记录
+
+    背景（审计 P1-8）：导出是敏感操作，但审计日志只记了「发生了一次 GET」，
+    没有「导出了多少条、哪些字段」。这里由接口侧提供元数据，中间件读取后
+    并入 AuditLog.detail。GET 导出本来不进审计，中间件侧由 D 组加入白名单。
+    """
+    request.state.export_meta = {
+        "count": len(rows),
+        "fields": [k for k, _ in picked],
+    }
+
+
 # ================================================================ 项目台账
-@router.get("/majors", summary="导出项目台账（Excel）")
+@router.get(
+    "/majors",
+    summary="导出项目台账（Excel）",
+    # 附录二：数据导出权限按角色区分——填报人=「—」。
+    # 早期三个导出接口只要求登录，export:ledger / export:progress 成了死权限点，
+    # 任何登录用户（含只读的填报人）都能导全量台账。
+    dependencies=[Depends(require_perm("export:ledger"))],
+)
 def export_majors(
+    request: Request,
     fmt: str = Query(default="xlsx", pattern="^(xlsx|pdf)$"),
     fields: str | None = Query(default=None, description="要导出的字段，逗号分隔"),
     keyword: str | None = None,
@@ -95,6 +119,7 @@ def export_majors(
         )
 
     picked = _pick_fields(MAJOR_FIELDS, fields)
+    _mark_export(request, data, picked)
     title = "产教融合项目台账"
     if fmt == "pdf":
         content = build_pdf(title, picked, data)
@@ -112,8 +137,13 @@ def export_majors(
 
 
 # ================================================================ 进度报表
-@router.get("/progress", summary="导出进度报表（Excel/PDF）")
+@router.get(
+    "/progress",
+    summary="导出进度报表（Excel/PDF）",
+    dependencies=[Depends(require_perm("export:progress"))],
+)
 def export_progress(
+    request: Request,
     fmt: str = Query(default="xlsx", pattern="^(xlsx|pdf)$"),
     fields: str | None = None,
     major_id: int | None = None,
@@ -121,6 +151,11 @@ def export_progress(
     status: str | None = None,
     keyword: str | None = None,
     only_abnormal: bool = False,
+    with_timeliness: bool = Query(
+        default=True, description="是否附带「报表及时率%」列（需求 3.6）"
+    ),
+    start: date | None = Query(default=None, description="及时率统计起始日（默认本年年初）"),
+    end: date | None = Query(default=None, description="及时率统计截止日（默认今天）"),
     sort: str = Query(
         default="deviation",
         pattern="^(deviation|update|progress)$",
@@ -141,20 +176,53 @@ def export_progress(
         page_size=10000,
         sort=sort,
     )
+
+    # 【P1-10】报表及时率：一次算出统计期内所有期次明细，再按 sub_id 聚合成
+    # {sub_id: 及时率%}，避免每行调一次 timeliness（那会变成 O(行数×期次)）。
+    timeliness_map: dict[int, float | None] = {}
+    if with_timeliness and rows:
+        try:
+            from app.services.report_service import ReportService
+
+            tl_start = start or date(date.today().year, 1, 1)
+            tl_end = end or date.today()
+            detail = ReportService(db).timeliness(
+                user, start=tl_start, end=tl_end
+            ).get("detail_all", [])
+            agg: dict[int, list[int]] = {}
+            for item in detail:
+                bucket = agg.setdefault(item["sub_id"], [0, 0])  # [按期, 应报]
+                bucket[1] += 1
+                if item.get("state") == "ON_TIME":
+                    bucket[0] += 1
+            for sub_id, (ok_cnt, total_cnt) in agg.items():
+                timeliness_map[sub_id] = (
+                    round(ok_cnt / total_cnt * 100, 1) if total_cnt else None
+                )
+        except Exception:  # 及时率算不出来不能拖垮导出
+            logger.warning("导出进度报表：报表及时率计算失败，降级为空列", exc_info=True)
+
     data = []
     for r in rows:
-        data.append(
-            {
-                **r,
-                "status_label": STATUS_LABEL.get(r["status"], r["status"]),
-                "time_progress": r["time_progress"] if r["time_progress"] is not None else "—",
-                "deviation": r["deviation"] if r["deviation"] is not None else "—",
-                "last_update_at": r["last_update_at"],
-                "days_since_update": r["days_since_update"] if r["days_since_update"] is not None else "",
-            }
-        )
+        row = {
+            **r,
+            "status_label": STATUS_LABEL.get(r["status"], r["status"]),
+            "time_progress": r["time_progress"] if r["time_progress"] is not None else "—",
+            "deviation": r["deviation"] if r["deviation"] is not None else "—",
+            "last_update_at": r["last_update_at"],
+            "days_since_update": r["days_since_update"] if r["days_since_update"] is not None else "",
+        }
+        if with_timeliness:
+            row["report_timeliness"] = (
+                timeliness_map.get(r["id"]) if timeliness_map.get(r["id"]) is not None else "—"
+            )
+        data.append(row)
 
     picked = _pick_fields(PROGRESS_FIELDS, fields)
+    # 未请求及时率列时不要导出空列（避免「勾了但没数据」的误解）
+    if not with_timeliness:
+        picked = [f for f in picked if f[0] != "report_timeliness"]
+    _mark_export(request, data, picked)
     title = "项目进度报表"
     subtitle = f"导出时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}　共 {len(data)} 条"
 
@@ -174,8 +242,13 @@ def export_progress(
 
 
 # ================================================================ 报表材料
-@router.get("/reports", summary="导出报表材料（Excel）")
+@router.get(
+    "/reports",
+    summary="导出报表材料（Excel）",
+    dependencies=[Depends(require_perm("export:progress"))],
+)
 def export_reports(
+    request: Request,
     fmt: str = Query(default="xlsx", pattern="^(xlsx|pdf)$"),
     fields: str | None = None,
     major_id: int | None = None,
@@ -218,6 +291,7 @@ def export_reports(
         )
 
     picked = _pick_fields(REPORT_FIELDS, fields)
+    _mark_export(request, data, picked)
     title = "报表材料汇编"
     subtitle = f"导出时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}　共 {len(data)} 条"
 

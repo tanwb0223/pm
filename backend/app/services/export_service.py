@@ -270,6 +270,9 @@ PROGRESS_FIELDS: list[tuple[str, str]] = [
     ("status_label", "状态"),
     ("last_update_at", "最近更新"),
     ("days_since_update", "未更新天数"),
+    # 需求 3.6 明确要求进度报表带「报表及时率」；值来自 ReportService.timeliness
+    # 的逐期明细按 sub_id 聚合（一次算完再映射，不逐行调用）。
+    ("report_timeliness", "报表及时率%"),
 ]
 
 REPORT_FIELDS: list[tuple[str, str]] = [

@@ -6,12 +6,29 @@
 """
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.system import SysHoliday
+
+# ================================================================ 时区口径
+# 业务时限（报表截止 12:00/18:00/24:00）与「今天」都按北京时间理解。
+# 服务器可能跑在 UTC（Docker 默认），直接用 date.today() 会在北京时间
+# 00:00~08:00 之间把日期算成前一天，导致周期、截止、补填期整体错位。
+SHANGHAI = ZoneInfo("Asia/Shanghai")
+
+
+def now_local() -> datetime:
+    """当前北京时间（带时区）"""
+    return datetime.now(SHANGHAI)
+
+
+def today_local() -> date:
+    """当前北京日期（业务上的「今天」）"""
+    return now_local().date()
 
 
 class CalendarService:
