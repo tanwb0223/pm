@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Any, TypeVar
 
-from sqlalchemy import Select, false, or_
+from sqlalchemy import Select, false, or_, select
 from sqlalchemy.orm import InstrumentedAttribute
 
 from app.core.deps import CurrentUser
@@ -29,7 +29,16 @@ def _has(model: Any, name: str) -> InstrumentedAttribute | None:
 
 
 def apply_scope(stmt: Select, user: CurrentUser, model: Any) -> Select:
-    """按当前用户的数据范围给查询加过滤条件"""
+    """按当前用户的数据范围给查询加过滤条件
+
+    ★ ProjMajor（大项目）需要特判：这张表本身**没有** major_id / college_id 列，
+    它的「归属」有两层含义：
+      - MAJOR 范围：大项目 id 就在授权列表里；
+      - COLLEGE 范围：该学院参与了这个大项目（关系在 proj_major_college）。
+    早期按通用逻辑走，major_col/college_col 都是 None，而 has_self 分支又只认
+    owner_id，于是 MAJOR/COLLEGE 范围用户 `list_majors` 全部命中 where(false())，
+    大项目下拉框恒为空（前端 AppLayout 的字典就靠这个接口）。
+    """
     if user.has_all_scope():
         return stmt
 
@@ -37,7 +46,30 @@ def apply_scope(stmt: Select, user: CurrentUser, model: Any) -> Select:
     college_ids = user.college_ids()
     has_self = any(s.scope_type in ("SELF", "CUSTOM") for s in user.scopes)
 
-    conds: list[Any] = []
+    # ---------------- ProjMajor 特判（P0-2）----------------
+    # 延迟导入：scope.py 被 models 层间接引用，模块级导入会形成循环。
+    from app.models.project import ProjMajor, ProjMajorCollege
+
+    if model is ProjMajor or getattr(model, "__tablename__", None) == "proj_major":
+        conds: list[Any] = []
+        if major_ids:
+            conds.append(model.id.in_(major_ids))
+        if college_ids:
+            # 该学院参与的（可读）：学院参与 ≠ 可写，写权限仍由 can_access_major 控制
+            conds.append(
+                model.id.in_(
+                    select(ProjMajorCollege.major_id).where(
+                        ProjMajorCollege.college_id.in_(college_ids)
+                    )
+                )
+            )
+        if has_self:
+            conds.append(model.owner_id == user.id)
+        if not conds:
+            return stmt.where(false())
+        return stmt.where(or_(*conds))
+
+    conds = []
 
     major_col = _has(model, "major_id")
     college_col = _has(model, "college_id")
@@ -198,6 +230,11 @@ def can_access_risk(user: CurrentUser, risk: Any, sub: Any = None) -> bool:
     - 风险所属大项目在本人 MAJOR 范围内
     - 风险关联子项目所在学院在本人 COLLEGE 范围内
     - 本人是风险责任人（SELF 范围）
+    - 本人是风险关联子项目的负责人（SELF 范围）
+
+    最后一条与写权限 `_assert_risk_write_scope` 对齐：子项目负责人可以给
+    自己负责的子项目登记风险，却因为列表/详情只认 risk.owner_id 而看不到
+    自己登记的风险，属于「写得进、读不出」的口径断裂。
     """
     if user.has_all_scope():
         return True
@@ -206,8 +243,12 @@ def can_access_risk(user: CurrentUser, risk: Any, sub: Any = None) -> bool:
     if getattr(risk, "owner_id", None) == user.id:
         return True
     s = sub if sub is not None else getattr(risk, "sub", None)
-    if s is not None and getattr(s, "college_id", None) in user.college_ids():
-        return True
+    if s is not None:
+        if getattr(s, "college_id", None) in user.college_ids():
+            return True
+        # SELF 范围：本人负责的子项目上的风险也可见
+        if getattr(s, "owner_id", None) == user.id:
+            return True
     return False
 
 

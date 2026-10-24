@@ -80,6 +80,8 @@ def list_records(
                 "id": r.id,
                 "progress": r.progress,
                 "note": r.note,
+                # 留痕类型：FILL/URGE/REPORT，前端可据此分组展示（催办与填报分开）
+                "event_type": r.event_type,
                 "is_no_change": r.is_no_change,
                 "is_rollback": r.is_rollback,
                 "rollback_reason": r.rollback_reason,
@@ -137,14 +139,22 @@ def progress_table(
 
 
 # ================================================================ 汇总
-@router.get("/progress/major/{major_id}", summary="大项目进度汇总（含学院分解）")
+@router.get(
+    "/progress/major/{major_id}",
+    summary="大项目进度汇总（含学院分解）",
+    dependencies=[Depends(require_perm("progress:table"))],
+)
 def major_summary(
     major_id: int,
     user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    # P0-3：原来既无权限点也无数据范围校验，任何登录用户都能看任意大项目汇总。
+    # 先按 get_major（已修：认 owner_id / 参与学院 / MAJOR 范围）做范围校验，
+    # 再把 user 传进汇总服务，让「学院分解」只统计本人范围内的子项目。
+    ProjectService(db).get_major(major_id, user)
     svc = ProgressService(db)
-    return ok(svc.major_summary(major_id))
+    return ok(svc.major_summary(major_id, user))
 
 
 @router.get(
@@ -184,6 +194,48 @@ def college_compare(
     """各学院平均偏差、滞后数、更新及时率，用于校级横向比较"""
     svc = ProgressService(db)
     return ok(svc.college_compare(user, major_id))
+
+
+@router.get(
+    "/progress/update-timeliness",
+    summary="进度更新及时率（每 N 天至少更新 1 次）",
+    dependencies=[Depends(require_perm("progress:table"))],
+)
+def update_timeliness(
+    start: date = Query(..., description="统计开始日期（含）"),
+    end: date = Query(..., description="统计结束日期（含）"),
+    major_id: int | None = None,
+    college_id: int | None = None,
+    user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """P1-6：独立的「进度更新及时率」接口
+
+    需求 4.3 口径：每 14 天至少更新 1 次。
+    分母=统计期内应更新子项目数（剔除免填期间/未启动/已结项），
+    分子=期内至少更新一次的子项目数。
+    """
+    svc = ProgressService(db)
+    return ok(
+        svc.update_timeliness(
+            user, start, end, major_id=major_id, college_id=college_id
+        )
+    )
+
+
+@router.get(
+    "/progress/urge-stats",
+    summary="催办统计（按子项目聚合）",
+    dependencies=[Depends(require_perm("progress:urge"))],
+)
+def urge_stats(
+    days: int = Query(default=30, ge=1, le=3650, description="统计最近 N 天"),
+    user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """P1-10：催了几次查得到（需求 6.3 第 25 项）"""
+    svc = ProgressService(db)
+    return ok(svc.urge_stats(user, days))
 
 
 # ================================================================ 快照
@@ -227,3 +279,19 @@ def urge_sub(
     )
     db.commit()
     return ok(result)
+
+
+@router.get("/subs/{sub_id}/urges", summary="子项目催办记录")
+def list_urges(
+    sub_id: int,
+    limit: int = Query(default=100, ge=1, le=500),
+    user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """P1-10：谁在什么时候催了几次（需求 6.3 第 25 项）
+
+    登录 + 数据范围校验即可（催办记录对项目相关人可见，不额外要求 progress:urge）。
+    """
+    svc = ProgressService(db)
+    assert_sub_access(user, ProjectService(db).get_sub(sub_id))
+    return ok(svc.list_urges(sub_id, limit))

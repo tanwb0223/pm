@@ -57,6 +57,9 @@ class MajorUpdateIn(MajorIn):
 
     name: str | None = Field(default=None, max_length=255)
     type: MajorType | None = None
+    # 变更原因：只用于写 ProjChangeLog，不落业务表（需求 6.3 第 20 项）。
+    # 前端编辑弹窗补一个「变更原因」输入框即可，不填也能保存。
+    change_reason: str | None = Field(default=None, max_length=500)
 
 
 class MajorOut(BaseModel):
@@ -127,6 +130,20 @@ class SubUpdateIn(BaseModel):
     plan_end: date | None = None
     weight: Decimal | None = None
     status: SubStatus | None = None
+    # 变更原因：只用于写 ProjChangeLog，不落业务表（需求 6.3 第 20 项）
+    change_reason: str | None = Field(default=None, max_length=500)
+
+
+class SubCloseIn(BaseModel):
+    """结项确认（独立接口 POST /subs/{id}/close）"""
+
+    remark: str | None = Field(default=None, max_length=500)
+
+
+class ObjectionIn(BaseModel):
+    """大项目结项异议（需求 6.3 第 27 项，结项后 7 天内可退回）"""
+
+    reason: str = Field(min_length=1, max_length=500)
 
 
 class SubOut(BaseModel):

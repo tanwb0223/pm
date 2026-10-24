@@ -1,7 +1,8 @@
 """项目台账服务：大项目、学院分工、子项目、完整性检查"""
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, time, timedelta
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import Select, func, select
@@ -10,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import BusinessError, ForbiddenError, NotFoundError
 from app.core.scope import apply_scope, assert_major_access, can_edit_major_college
 from app.db.dialect import ilike
+from app.models.change_log import ProjChangeLog
 from app.models.project import ProjMajor, ProjMajorCollege, ProjSub
 from app.models.system import SysCollege, SysUser
 from app.schemas.project import (
@@ -21,6 +23,7 @@ from app.schemas.project import (
     SubIn,
     SubUpdateIn,
 )
+from app.services.config_service import ConfigService
 
 # 所有子项目合法的状态迁移
 _ALLOWED_TRANSITIONS: dict[str, set[str]] = {
@@ -29,6 +32,31 @@ _ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     "ABORTED": {"IN_PROGRESS"},
     "CLOSED": set(),
 }
+
+# 需要写变更留痕的关键字段（需求 6.3 第 20 项）
+# 只记录「会影响考核/汇总口径」的字段：计划时间、权重、负责人、状态。
+# 名称/备注等描述性字段改错影响小，留在 audit_log 即可。
+_TRACKED_CHANGE_FIELDS: tuple[str, ...] = (
+    "plan_start",
+    "plan_end",
+    "weight",
+    "owner_id",
+    "status",
+)
+
+
+def _change_value(v: Any) -> str | None:
+    """变更值统一转字符串（日期用 ISO、Decimal 去掉多余尾零）"""
+    if v is None:
+        return None
+    if isinstance(v, datetime):
+        return v.isoformat()
+    if isinstance(v, date):
+        return v.isoformat()
+    if isinstance(v, Decimal):
+        # 9.00 → 9，避免前端展示 "9.00 → 10.00" 的噪声
+        return format(v.normalize(), "f")
+    return str(v)
 
 
 class ProjectService:
@@ -140,6 +168,8 @@ class ProjectService:
         status: str | None = None,
         owner_id: int | None = None,
         college_id: int | None = None,
+        created_from: date | None = None,
+        created_to: date | None = None,
         page: int = 1,
         page_size: int = 20,
     ) -> tuple[list[ProjMajor], int]:
@@ -162,6 +192,18 @@ class ProjectService:
                     )
                 )
             )
+        # 立项时间区间筛选（P1-13）：前端台账页按「立项年份」筛项目。
+        # created_at 是 UTC datetime，用半开区间 [from 00:00, to+1day 00:00) 比较，
+        # 避免把 to 当天创建的项目漏掉（按 date 直接 <= 会漏时分秒）。
+        if created_from:
+            stmt = stmt.where(
+                ProjMajor.created_at >= datetime.combine(created_from, time.min, tzinfo=UTC)
+            )
+        if created_to:
+            stmt = stmt.where(
+                ProjMajor.created_at
+                < datetime.combine(created_to + timedelta(days=1), time.min, tzinfo=UTC)
+            )
 
         total = self.db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
         rows = list(
@@ -178,17 +220,32 @@ class ProjectService:
         if m is None or m.deleted_at is not None:
             raise NotFoundError("大项目不存在")
         if user is not None and not user.has_all_scope():
-            # 检查是否在范围内
-            in_major = major_id in user.major_ids()
-            in_college = self.db.scalar(
-                select(func.count()).select_from(ProjMajorCollege).where(
-                    ProjMajorCollege.major_id == major_id,
-                    ProjMajorCollege.college_id.in_(user.college_ids() or [-1]),
-                )
-            )
-            if not in_major and not in_college:
-                raise ForbiddenError("无权访问该项目")
+            # 读权限口径 = 写权限口径（can_access_major）+ 「本学院参与」
+            # 早期这里自写一套判定，只认 user.major_ids() 与参与学院，
+            # **不认 owner_id**：SELF 范围的大项目负责人列表能看到自己的项目
+            # （apply_scope 的 has_self 分支用了 owner_id），点详情却 403。
+            # 读权限不应比写权限更严，这里补上 owner_id 分支。
+            if self._can_read_major(m, user):
+                return m
+            raise ForbiddenError("无权访问该项目")
         return m
+
+    def _can_read_major(self, m: ProjMajor, user: Any) -> bool:
+        """大项目读权限：MAJOR 授权 / 本人是负责人 / 本学院参与 / 全校范围"""
+        from app.core.scope import can_access_major
+
+        if can_access_major(user, m):
+            return True
+        college_ids = user.college_ids()
+        if not college_ids:
+            return False
+        in_college = self.db.scalar(
+            select(func.count()).select_from(ProjMajorCollege).where(
+                ProjMajorCollege.major_id == m.id,
+                ProjMajorCollege.college_id.in_(college_ids),
+            )
+        )
+        return bool(in_college)
 
     def create_major(self, body: MajorIn, operator: Any) -> ProjMajor:
         if body.owner_id:
@@ -216,6 +273,8 @@ class ProjectService:
         # 数据范围：只能改自己授权范围内的大项目
         assert_major_access(operator, m)
         data = body.model_dump(exclude_unset=True)
+        # change_reason 只用于写留痕，不是业务字段（P1-9）
+        change_reason = data.pop("change_reason", None)
 
         # 原始计划不允许通过常规编辑修改（第 38 项：变更走变更登记）
         data.pop("original_start", None)
@@ -242,10 +301,121 @@ class ProjectService:
                     f"还有 {unfinished} 个子项目未结项，请先完成或中止后再结项"
                 )
 
+        # 变更留痕（P1-9）：先记旧值，再 setattr，逐字段落 ProjChangeLog。
+        # 只记关键字段；值未变化的不记（避免前端重复提交产生噪声流水）。
+        for field in _TRACKED_CHANGE_FIELDS:
+            if field not in data:
+                continue
+            old = getattr(m, field, None)
+            new = data[field]
+            if _change_value(old) == _change_value(new):
+                continue
+            self._write_change_log(
+                target_type="MAJOR",
+                target_id=major_id,
+                field=field,
+                old=old,
+                new=new,
+                reason=change_reason,
+                operator=operator,
+            )
+
         for k, v in data.items():
             setattr(m, k, v)
+
+        # 结项时清理上一次的异议字段：否则重新结项后，上一轮「异议退回」的
+        # 时间/原因还挂在项目上，前端会误显示「本项目曾被异议退回」。
+        if data.get("status") == "CLOSED":
+            m.close_objection_at = None
+            m.close_objection_by = None
+            m.close_objection_reason = None
+
         self.db.flush()
         return m
+
+    def raise_objection(self, major_id: int, reason: str, operator: Any) -> ProjMajor:
+        """大项目结项异议（需求 6.3 第 27 项：结项后 7 天内可退回）
+
+        为什么用 updated_at 近似「结项时间」：
+        `proj_major` 没有单独的 closed_at 列（迁移 0008 未加），而结项动作
+        本身就会刷新 updated_at（onupdate=func.now()），因此「updated_at 在
+        7 天内」在正常流程下等价于「最近一次状态变更在 7 天内」。
+        更严格的做法是补 closed_at 字段，但会牵动 A 组的迁移编号，暂不引入。
+
+        口径：只有 CLOSED 状态可提异议；退回后状态回 ACTIVE，并记录异议人/时间/原因。
+        """
+        from app.core.scope import assert_major_access
+
+        m = self.db.get(ProjMajor, major_id)
+        if m is None or m.deleted_at is not None:
+            raise NotFoundError("大项目不存在")
+        assert_major_access(operator, m)
+        if m.status != "CLOSED":
+            raise BusinessError("只有已结项的大项目才能提出结项异议")
+        # 7 天窗口：updated_at 为最近一次修改时间（含结项那次）
+        closed_recently = m.updated_at is not None and (
+            datetime.now(UTC) - m.updated_at <= timedelta(days=7)
+        )
+        if not closed_recently:
+            raise BusinessError("结项已超过 7 天，不能再提出异议")
+        if not (reason or "").strip():
+            raise BusinessError("请填写异议原因")
+
+        m.status = "ACTIVE"
+        m.close_objection_at = datetime.now(UTC)
+        m.close_objection_by = operator.id
+        m.close_objection_reason = reason.strip()[:500]
+        self._write_change_log(
+            target_type="MAJOR",
+            target_id=major_id,
+            field="status",
+            old="CLOSED",
+            new="ACTIVE",
+            reason=f"结项异议退回：{reason.strip()[:200]}",
+            operator=operator,
+        )
+        self.db.flush()
+        return m
+
+    def list_changes(
+        self, target_type: str, target_id: int, limit: int = 50
+    ) -> list[ProjChangeLog]:
+        """对象变更历史（前端详情页「变更记录」抽屉）"""
+        return list(
+            self.db.scalars(
+                select(ProjChangeLog)
+                .where(
+                    ProjChangeLog.target_type == target_type,
+                    ProjChangeLog.target_id == target_id,
+                )
+                .order_by(ProjChangeLog.created_at.desc(), ProjChangeLog.id.desc())
+                .limit(limit)
+            )
+        )
+
+    def _write_change_log(
+        self,
+        *,
+        target_type: str,
+        target_id: int,
+        field: str,
+        old: Any,
+        new: Any,
+        reason: str | None,
+        operator: Any,
+    ) -> None:
+        """写一条字段级变更流水（P1-9）"""
+        self.db.add(
+            ProjChangeLog(
+                target_type=target_type,
+                target_id=target_id,
+                field=field,
+                old_value=_change_value(old),
+                new_value=_change_value(new),
+                reason=(reason or None),
+                operator_id=getattr(operator, "id", None),
+            )
+        )
 
     def delete_major(self, major_id: int, operator: Any) -> None:
         m = self.db.get(ProjMajor, major_id)
@@ -402,9 +572,25 @@ class ProjectService:
         self.db.flush()
         return s
 
-    def update_sub(self, sub_id: int, body: SubUpdateIn) -> ProjSub:
+    def update_sub(self, sub_id: int, body: SubUpdateIn, operator: Any | None = None) -> ProjSub:
+        """编辑子项目
+
+        operator 用于结项确认人校验与变更留痕。早期接口没传 operator，
+        结项只校验进度 100%（带着 18 条未关闭预警也能结项）。
+        """
         s = self.get_sub(sub_id)
         data = body.model_dump(exclude_unset=True)
+        # change_reason 只用于写留痕，不是业务字段（P1-9）
+        change_reason = data.pop("change_reason", None)
+
+        # 结项后只读（P0-4）：除 status 外一律拒绝。
+        # 早期实测 CLOSED 后还能改名称/计划/权重，与「结项=归档」的定位不符。
+        # status 要放行：状态机里 CLOSED 没有后继状态，实际会被 _ALLOWED_TRANSITIONS 拦住，
+        # 但保留这一条是为了错误文案能落到「状态不允许迁移」而不是「已结项不能修改」。
+        if s.status == "CLOSED":
+            blocked = [k for k in data if k != "status"]
+            if blocked:
+                raise BusinessError("子项目已结项，只能查看，不能再修改")
 
         # 状态迁移校验
         new_status = data.get("status")
@@ -415,12 +601,29 @@ class ProjectService:
                     f"状态不允许从「{s.status}」直接变为「{new_status}」"
                 )
             if new_status == "CLOSED":
-                # 结项条件（文档 6.1 第 6 项）
-                if s.current_progress != 100:
-                    raise BusinessError("进度未达 100%，不能结项")
+                # 结项三条件（文档 6.1 第 6 项，P0-4）
+                self._check_close_conditions(s, operator)
                 s.closed_at = datetime.now(UTC)
 
         # 计划时间变更：只改 plan_*，不动 original_*（第 38 项）
+        # 变更留痕（P1-9）：记录 plan_start/plan_end/weight/owner_id/status 的改前改后值
+        for field in _TRACKED_CHANGE_FIELDS:
+            if field not in data:
+                continue
+            old = getattr(s, field, None)
+            new = data[field]
+            if _change_value(old) == _change_value(new):
+                continue
+            self._write_change_log(
+                target_type="SUB",
+                target_id=sub_id,
+                field=field,
+                old=old,
+                new=new,
+                reason=change_reason,
+                operator=operator,
+            )
+
         for k, v in data.items():
             setattr(s, k, v)
 
@@ -429,6 +632,98 @@ class ProjectService:
 
         self.db.flush()
         return s
+
+    def close_sub(
+        self,
+        sub_id: int,
+        operator: Any,
+        remark: str | None = None,
+    ) -> ProjSub:
+        """结项确认（独立接口 POST /subs/{id}/close，P0-4）
+
+        与 update_sub 的 CLOSED 分支共用同一套校验，避免两个入口口径不一致。
+        """
+        s = self.get_sub(sub_id)
+        if s.status == "CLOSED":
+            raise BusinessError("该子项目已结项")
+        allowed = _ALLOWED_TRANSITIONS.get(s.status, set())
+        if "CLOSED" not in allowed:
+            raise BusinessError(
+                f"当前状态「{s.status}」不允许结项，请先更新进度进入进行中"
+            )
+        self._check_close_conditions(s, operator)
+        old_status = s.status
+        s.status = "CLOSED"
+        s.closed_at = datetime.now(UTC)
+        self._write_change_log(
+            target_type="SUB",
+            target_id=sub_id,
+            field="status",
+            old=old_status,
+            new="CLOSED",
+            reason=(remark or "结项确认"),
+            operator=operator,
+        )
+        self.db.flush()
+        return s
+
+    def _check_close_conditions(self, s: ProjSub, operator: Any | None) -> None:
+        """子项目结项三条件（文档 6.1 第 6 项）
+
+        1. 进度 100%（原有条件）
+        2. 至少 1 份已提交月报（参数 report.close_need_monthly 控制）
+        3. 无未关闭预警（参数 report.close_block_open_alert 控制）
+        4. 学院负责人确认（管理员/全校范围放行）
+        """
+        # 1) 进度
+        if s.current_progress != 100:
+            raise BusinessError("进度未达 100%，不能结项")
+
+        cfg = ConfigService(self.db)
+
+        # 2) 材料：至少一份 SUBMITTED 月报
+        if cfg.get_bool("report.close_need_monthly", True):
+            from app.models.report import Report
+
+            monthly = self.db.scalar(
+                select(func.count()).select_from(Report).where(
+                    Report.sub_id == s.id,
+                    Report.type == "MONTHLY",
+                    Report.status == "SUBMITTED",
+                )
+            )
+            if not monthly:
+                raise BusinessError("结项前至少需要提交 1 份月报")
+
+        # 3) 无未关闭预警（PENDING/CLAIMED）
+        if cfg.get_bool("report.close_block_open_alert", True):
+            from app.models.alert import Alert
+
+            open_alerts = self.db.scalar(
+                select(func.count()).select_from(Alert).where(
+                    Alert.sub_id == s.id,
+                    Alert.status.in_(("PENDING", "CLAIMED")),
+                )
+            )
+            if open_alerts:
+                raise BusinessError(
+                    f"还有 {open_alerts} 条未关闭预警，请先处置后再结项"
+                )
+
+        # 4) 学院负责人确认：该子项目所属学院的负责人，或全校范围/管理员
+        if operator is not None and not operator.has_all_scope():
+            college_owner_ids = set(
+                self.db.scalars(
+                    select(ProjMajorCollege.college_owner_id).where(
+                        ProjMajorCollege.major_id == s.major_id,
+                        ProjMajorCollege.college_id == s.college_id,
+                        ProjMajorCollege.college_owner_id.is_not(None),
+                    )
+                )
+            )
+            if operator.id not in college_owner_ids:
+                raise ForbiddenError("结项需学院负责人确认")
+
 
     def delete_sub(self, sub_id: int) -> None:
         s = self.get_sub(sub_id)

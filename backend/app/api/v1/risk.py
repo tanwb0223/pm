@@ -101,7 +101,10 @@ def list_risks(
     db: Session = Depends(get_db),
 ):
     stmt = select(Risk)
-    # 数据范围：风险挂在 major_id / sub_id 上，按大项目与学院范围收敛
+    # 数据范围：风险挂在 major_id / sub_id 上，按大项目与学院范围收敛。
+    # SELF 范围补两个条件（与 can_access_risk 对齐）：
+    #   1) 本人是风险责任人
+    #   2) 本人是风险关联子项目的负责人 —— 否则子项目负责人「写得进、读不出」
     if not user.has_all_scope():
         conds = []
         major_ids = user.major_ids()
@@ -116,6 +119,9 @@ def list_risks(
             )
         if any(s.scope_type in ("SELF", "CUSTOM") for s in user.scopes):
             conds.append(Risk.owner_id == user.id)
+            conds.append(
+                Risk.sub_id.in_(select(ProjSub.id).where(ProjSub.owner_id == user.id))
+            )
         if conds:
             stmt = stmt.where(or_(*conds))
         else:

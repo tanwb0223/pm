@@ -11,14 +11,21 @@
 - CLOSED 按 100% 计入，保留权重
 - NOT_STARTED / ABORTED 不计入
 - Σ权重 = 0 时退化为等权
+
+数据范围：
+- 汇总接口的入参可以带 user（P0-3）：学院负责人看大项目汇总时，
+  只统计本人范围内的子项目，避免「学院对比/学院分解」把别的学院数据带出来。
+  user=None 表示全校口径（定时任务、导出等内部调用保持原行为）。
 """
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.scope import apply_scope
 from app.models.project import ProjMajor, ProjSub
 from app.services.config_service import ConfigService
 
@@ -37,6 +44,7 @@ class AggregationService:
         major_id: int | None = None,
         college_id: int | None = None,
         include_closed: bool | None = None,
+        user: Any | None = None,
     ) -> list[ProjSub]:
         if include_closed is None:
             include_closed = self.config.get_bool("aggregate.include_closed", True)
@@ -49,6 +57,9 @@ class AggregationService:
             stmt = stmt.where(ProjSub.major_id == major_id)
         if college_id is not None:
             stmt = stmt.where(ProjSub.college_id == college_id)
+        # 数据范围（P0-3）：只统计本人有权看到的子项目
+        if user is not None:
+            stmt = apply_scope(stmt, user, ProjSub)
         return list(self.db.scalars(stmt))
 
     @staticmethod
@@ -95,9 +106,13 @@ class AggregationService:
         progresses = [self.major_progress(mid) for mid in major_ids]
         return int(sum(progresses) / len(progresses))
 
-    def breakdown(self, major_id: int) -> dict:
-        """大项目进度构成：用于详情页展示"""
-        subs = self.counted_subs(major_id=major_id)
+    def breakdown(self, major_id: int, user: Any | None = None) -> dict:
+        """大项目进度构成：用于详情页展示
+
+        user 非空时按数据范围收敛（P0-3）：学院负责人只看本学院子项目，
+        避免通过「学院分解」看到其他学院的进度明细。
+        """
+        subs = self.counted_subs(major_id=major_id, user=user)
         colleges = {}
         for s in subs:
             colleges.setdefault(s.college_id, []).append(s)
