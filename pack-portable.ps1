@@ -127,6 +127,9 @@ try {
     Copy-Item (Join-Path $Root "backend\alembic.ini") "$Pkg\app\"
     Copy-Item (Join-Path $Root "backend\scripts") "$Pkg\app\scripts" -Recurse
     Copy-Item (Join-Path $Root "backend\requirements-prod.txt") "$Pkg\app\requirements.txt"
+    # 把 .env.example 打进包：首次运行时 start.bat 会复制成 app\.env 并补随机密钥。
+    # 不打包的话目标机没有任何配置模板，用户不知道有哪些参数可改。
+    Copy-Item (Join-Path $Root "backend\.env.example") "$Pkg\app\.env.example"
 
     # 前端（未构建则自动构建）
     $dist = Join-Path $Root "frontend\dist"
@@ -216,11 +219,30 @@ REM 默认使用 SQLite（零依赖，数据在 data\pm.db）
 REM 如需 PostgreSQL，在 app\.env 中配置 PM_DATABASE_URL
 
 echo [1/3] 检查配置...
-if exist "app\.env" (
-    echo   使用已有配置：app\.env
-) else (
-    echo   首次运行，使用默认配置（SQLite 零依赖）
-)
+if not exist "app\.env" goto env_first_run
+echo   使用已有配置：app\.env
+goto env_ready
+
+:env_first_run
+echo   首次运行：生成 app\.env 并写入随机 PM_SECRET_KEY...
+REM 为什么必须生成密钥：非 debug 模式下 PM_SECRET_KEY 为空或占位值时，
+REM app/core/config.py 的启动校验会直接抛错拒绝启动 —— 便携版
+REM 「解压双击即用」就变成「双击必失败」。这里用包内 Python 生成并回写，
+REM 目标机不需要任何额外工具。
+REM 已存在 app\.env 时整段跳过，不覆盖用户手工改过的配置。
+REM 注意：这里用 goto 而不是 if(...) 块，因为 python -c 的代码里含括号，
+REM 放进括号块会被 cmd 提前截断。
+if exist "app\.env.example" copy /Y "app\.env.example" "app\.env" >nul
+if exist "app\.env" goto env_generate
+echo # 产教融合项目管理系统 配置文件> "app\.env"
+:env_generate
+"python\python.exe" -c "import secrets,pathlib; p=pathlib.Path('app/.env'); t=p.read_text(encoding='utf-8') if p.exists() else ''; k='PM_SECRET_KEY='+secrets.token_urlsafe(48); ls=[k if l.startswith('PM_SECRET_KEY=') else l for l in t.splitlines()]; ls=ls+([k] if k not in ls else []); p.write_text(chr(10).join(ls)+chr(10),encoding='utf-8')"
+if errorlevel 1 goto env_key_failed
+echo   已生成随机密钥并写入 app\.env
+goto env_ready
+:env_key_failed
+echo   [X] 生成密钥失败，请检查 python\python.exe 是否完整
+:env_ready
 echo.
 
 echo [2/3] 初始化数据库...

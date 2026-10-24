@@ -213,13 +213,31 @@ def purge_attachment(attachment_id: int, db: Session = Depends(get_db)):
 # ================================================================ 统计
 @router.get(
     "/stats",
-    summary="附件存储统计",
+    summary="附件存储统计（含孤儿文件）",
     dependencies=[Depends(require_perm("system:config"))],
 )
 def storage_stats(
     user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """磁盘占用与剩余空间：属运维信息，限制为管理员（system:config）"""
+    """磁盘占用、剩余空间与孤儿文件：属运维信息，限制为管理员（system:config）"""
     svc = AttachmentService(db)
     return ok(svc.stats())
+
+
+# ================================================================ 孤儿文件清理
+@router.post(
+    "/orphans/purge",
+    summary="清理孤儿文件（数据库无记录的物理文件）",
+    dependencies=[Depends(require_perm("system:config"))],
+)
+def purge_orphans(db: Session = Depends(get_db)):
+    """清理孤儿文件
+
+    背景：上传目录里存在但 attachment 表无记录的文件（事务回滚、
+    库还原到旧备份、手工拷贝等都会产生），长期白占磁盘。
+    先 GET /api/attachments/stats 看 orphan_count 再决定是否清理。
+    """
+    svc = AttachmentService(db)
+    return ok(svc.purge_orphans())
+

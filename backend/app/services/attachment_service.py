@@ -47,6 +47,11 @@ BLOCKED_EXTS = {
 
 BIZ_TYPES = {"SUB", "MAJOR", "REPORT", "RISK", "OTHER"}
 
+# 上传前最低磁盘余量：低于此值直接拒绝
+# 为什么要有：附件写文件系统，磁盘写满时 SQLite/PG 与日志也会一起挂，
+# 属于"一次上传拖垮整个系统"的事故；提前 500MB 拦住比事后清理便宜。
+MIN_FREE_DISK_MB = 500
+
 
 class AttachmentService:
     def __init__(self, db: Session):
@@ -82,6 +87,7 @@ class AttachmentService:
         safe_name = self._sanitize_name(file_name)
         ext = self._ext_of(safe_name)
         self._check_ext(ext)
+        self._check_disk_space()
 
         # 写入文件系统
         rel_path = new_stored_path(safe_name)
@@ -198,7 +204,13 @@ class AttachmentService:
 
     # ============================================================ 统计
     def stats(self) -> dict[str, Any]:
-        """附件使用统计"""
+        """附件使用统计（含孤儿文件）
+
+        孤儿文件 = 上传目录里存在、但 attachment 表没有记录的文件。
+        产生原因：上传时写盘成功但事务回滚、软删除后执行了物理清理、
+        或数据库被还原到更早的备份。长期不清理会白占磁盘，
+        且备份体积持续变大 —— 运维需要一个可见的数字与一键清理入口。
+        """
         total_count = self.db.scalar(
             select(func.count()).select_from(Attachment).where(
                 Attachment.deleted_at.is_(None)
@@ -218,15 +230,87 @@ class AttachmentService:
         except OSError:
             free_mb = total_mb = 0
 
+        orphans = self.scan_orphans()
+
         return {
             "count": total_count,
             "size_mb": round(total_size / 1024 / 1024, 1),
             "storage_dir": str(self.root),
             "disk_free_mb": round(free_mb, 0),
             "disk_total_mb": round(total_mb, 0),
+            "orphan_count": len(orphans),
+            "orphan_size_mb": round(sum(o["size"] for o in orphans) / 1024 / 1024, 1),
         }
 
+    # ============================================================ 孤儿文件
+    def scan_orphans(self) -> list[dict[str, Any]]:
+        """扫描上传目录：返回数据库里没有记录的物理文件
+
+        只扫 `root` 下的真实文件，忽略隐藏文件与目录；
+        stored_path 在库中是 POSIX 相对路径（YYYY/MM/uuid.ext），
+        这里统一转成同一口径做集合比对。
+        """
+        root = self.root
+        if not root.is_dir():
+            return []
+
+        known = set(
+            self.db.scalars(
+                select(Attachment.stored_path).where(Attachment.stored_path.is_not(None))
+            )
+        )
+        # 归一化：Windows 上 pathlib 会给出反斜杠，统一成 /
+        known = {str(p).replace("\\", "/").lstrip("/") for p in known}
+
+        orphans: list[dict[str, Any]] = []
+        try:
+            for path in root.rglob("*"):
+                if not path.is_file():
+                    continue
+                rel = path.relative_to(root).as_posix()
+                if rel in known:
+                    continue
+                try:
+                    size = path.stat().st_size
+                except OSError:
+                    size = 0
+                orphans.append({"path": rel, "size": size})
+        except OSError:
+            logger.warning("扫描孤儿文件失败：%s", root, exc_info=True)
+        return orphans
+
+    def purge_orphans(self) -> dict[str, Any]:
+        """删除孤儿文件（物理删除，不可恢复）
+
+        仅删「数据库完全无记录」的文件，软删除的附件不在此列
+        （软删除是有意保留的，可通过 purge 接口单独处理）。
+        """
+        orphans = self.scan_orphans()
+        removed = 0
+        freed = 0
+        for item in orphans:
+            target = self.root / item["path"]
+            try:
+                target.unlink(missing_ok=True)
+                removed += 1
+                freed += item["size"]
+            except OSError:
+                logger.warning("删除孤儿文件失败：%s", target, exc_info=True)
+        logger.info("孤儿文件清理：删除 %s 个，释放 %.1f MB", removed, freed / 1024 / 1024)
+        return {"removed": removed, "freed_mb": round(freed / 1024 / 1024, 2)}
+
     # ============================================================ 内部
+    def _check_disk_space(self) -> None:
+        """上传前检查磁盘余量（低于 MIN_FREE_DISK_MB 直接拒绝）"""
+        try:
+            free_mb = shutil.disk_usage(self.root).free / 1024 / 1024
+        except OSError:
+            # 拿不到磁盘信息时不阻断上传（例如目录尚未创建）
+            return
+        if free_mb < MIN_FREE_DISK_MB:
+            logger.error("附件目录磁盘余量不足：%.0f MB", free_mb)
+            raise BusinessError("磁盘空间不足，请联系管理员清理后再上传")
+
     @staticmethod
     def _sanitize_name(name: str) -> str:
         """净化文件名

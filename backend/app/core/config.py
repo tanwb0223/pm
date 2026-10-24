@@ -26,7 +26,11 @@ _MIN_SECRET_LEN = 32
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        # 为什么用绝对路径而不是 ".env"：相对路径按**进程当前工作目录**解析。
+        # 便携版 start.bat 从包根目录启动 uvicorn（cwd=包根），而配置写在
+        # app\.env —— 用相对路径会读不到，首次运行生成的密钥等于白生成，
+        # 非 debug 模式下应用照样起不来。这里锚定到代码所在目录，与 cwd 解耦。
+        env_file=str(_PROJECT_ROOT / ".env"),
         env_file_encoding="utf-8",
         env_prefix="PM_",
         extra="ignore",
@@ -105,6 +109,11 @@ class Settings(BaseSettings):
     # 设为 true 时由 FastAPI 直接托管前端产物，无需 nginx
     frontend_serve: bool = False
     frontend_dir: str = ""
+    # 前端对外访问地址（用于 SSO 回调 302 落地页）
+    # 为什么单独加：frontend_dir 是「本机静态文件目录」，不是 URL，
+    # 拼不出 https://pm.school.edu.cn/login/oidc/complete 这种地址。
+    # 留空时按请求的 Origin/Referer 推导，再兜底本机 8000。
+    frontend_base_url: str = ""
 
     # 数据库自动备份
     backup_enabled: bool = True          # 是否启用自动备份
@@ -123,6 +132,17 @@ class Settings(BaseSettings):
     # 数据保留（年）：用于运维清理脚本
     audit_retention_years: int = 2
     snapshot_retention_years: int = 3
+
+    # 数据清理任务（scripts/cleanup.py）
+    # 为什么默认关闭：删除历史数据不可逆，先让管理员在参数页确认保留期后
+    # 再显式开启，避免升级后"第一次启动就删库"。
+    cleanup_enabled: bool = False
+    cleanup_hour: int = 3                # 每日几点清理（避开 01:00 快照 / 02:00 备份）
+
+    # 系统参数缓存 TTL（秒）
+    # 多 worker 下每个进程各自缓存 sys_config，改参数后其他进程不刷新；
+    # 用短 TTL 自动过期，最多 30 秒后全实例一致（比引入 Redis 简单可靠）。
+    config_cache_ttl_seconds: int = 30
 
     # CORS（开发期前端 5173）
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])

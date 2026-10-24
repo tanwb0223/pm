@@ -1,19 +1,37 @@
 """认证 API：多协议登录、配置管理、账号绑定"""
 from __future__ import annotations
 
+import logging
 from typing import Any
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.auth.service import AuthService
-from app.core.deps import CurrentUser, get_current_user, require_perm
+from app.core.config import settings
+from app.core.deps import (
+    DOWNLOAD_TICKET_TTL_SECONDS,
+    CurrentUser,
+    get_current_user,
+    issue_download_ticket,
+    require_perm,
+)
 from app.core.exceptions import BusinessError
-from app.core.login_guard import login_throttle
+from app.core.login_guard import (
+    check_locked,
+    locked_seconds,
+    login_throttle,
+    record_failure,
+    record_success,
+)
 from app.core.response import ok
 from app.core.security import create_access_token, password_version
 from app.db.session import get_db
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/auth", tags=["认证"])
 
@@ -23,6 +41,53 @@ def _public_base(request: Request) -> str:
     proto = request.headers.get("x-forwarded-proto") or request.url.scheme
     host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc
     return f"{proto}://{host}"
+
+
+def _frontend_base(request: Request) -> str:
+    """前端对外地址：用于 SSO 回调 302 的落地页
+
+    优先级：
+      1) settings.frontend_base_url（部署时显式配置，最可靠）
+      2) 请求头 Origin / Referer（反向代理场景下自动跟随）
+      3) _public_base(request)（前后端同域时就是它）
+      4) http://127.0.0.1:8000（便携版兜底）
+
+    为什么不能直接用 settings.frontend_dir：那是「本机静态文件目录」，
+    形如 D:/pm/frontend/dist，拼不出可访问的 URL。
+    """
+    configured = (settings.frontend_base_url or "").strip()
+    if configured:
+        return configured.rstrip("/")
+
+    origin = (request.headers.get("origin") or "").strip()
+    if origin and origin != "null":
+        return origin.rstrip("/")
+
+    referer = (request.headers.get("referer") or "").strip()
+    if referer:
+        from urllib.parse import urlparse
+
+        parsed = urlparse(referer)
+        if parsed.scheme and parsed.netloc:
+            return f"{parsed.scheme}://{parsed.netloc}"
+
+    base = _public_base(request)
+    if base:
+        return base.rstrip("/")
+    return "http://127.0.0.1:8000"
+
+
+def _wants_json(request: Request, fmt: str | None) -> bool:
+    """SSO 回调是否需要返回 JSON（脚本/测试兼容）
+
+    浏览器走 302 到前端落地页；命令行/自动化脚本传 Accept: application/json
+    或 ?format=json 时仍返回统一 JSON，不改变既有集成方式。
+    """
+    if (fmt or "").strip().lower() == "json":
+        return True
+    accept = (request.headers.get("accept") or "").lower()
+    # 注意：浏览器默认 Accept 是 text/html,...，只有显式声明 json 才走 JSON
+    return "application/json" in accept and "text/html" not in accept
 
 
 # ---------------------------------------------------------------- 请求体
@@ -63,17 +128,41 @@ def list_public_providers(request: Request, db: Session = Depends(get_db)):
 @router.post("/login", summary="账号密码登录")
 def login_password(body: PasswordLoginIn, request: Request, db: Session = Depends(get_db)):
     svc = AuthService(db, _public_base(request))
-    # 防在线撞库：同一账号连续失败达到上限后锁定（见 core/login_guard.py）
-    key = f"pwd:{body.username.strip().lower()}"
-    wait = login_throttle.locked_seconds(key)
-    if wait:
-        raise BusinessError(f"登录失败次数过多，请 {max(1, wait // 60)} 分钟后再试")
+    username = body.username.strip()
+    user = svc.find_user(username)
+
+    # 审计：登录接口没有 current_user，把工号写进 request.state 供中间件记录
+    request.state.audit_extra = {"staff_no": username, "auth_kind": "password"}
+
+    # 防在线撞库：计数落库（多 worker / 重启后仍有效），锁定返回 429
+    check_locked(user)
+    if user is None:
+        # 用户不存在时数据库无处落账，用进程内计数挡住用户名枚举
+        key = f"pwd:{username.lower()}"
+        wait = login_throttle.locked_seconds(key)
+        if wait:
+            from app.core.login_guard import LoginLockedError
+
+            raise LoginLockedError(wait)
+
     try:
-        user = svc.login_password(body.username, body.password)
+        user = svc.login_password(username, body.password)
     except ValueError as e:
-        login_throttle.record_failure(key)
+        # 只有「凭证错误」才计入限流；认证方式停用/账号停用属于管理配置，
+        # 计进去会让一次误配置把全校账号锁死（见 auth/service.py CredentialError）。
+        from app.auth.service import CredentialError
+
+        if isinstance(e, CredentialError):
+            if user is not None:
+                request.state.audit_operator_id = user.id
+                record_failure(db, user)
+                db.commit()
+            else:
+                login_throttle.record_failure(f"pwd:{username.lower()}")
         raise BusinessError(str(e)) from e
-    login_throttle.reset(key)
+
+    request.state.audit_operator_id = user.id
+    record_success(db, user)
     db.commit()
     token = create_access_token(user.id, {"pv": password_version(user)})
     return ok(
@@ -90,16 +179,22 @@ def login_password(body: PasswordLoginIn, request: Request, db: Session = Depend
 @router.post("/login/ldap", summary="LDAP / AD 域登录")
 def login_ldap(body: LdapLoginIn, request: Request, db: Session = Depends(get_db)):
     svc = AuthService(db, _public_base(request))
-    key = f"ldap:{body.username.strip().lower()}"
-    wait = login_throttle.locked_seconds(key)
-    if wait:
-        raise BusinessError(f"登录失败次数过多，请 {max(1, wait // 60)} 分钟后再试")
+    username = body.username.strip()
+    request.state.audit_extra = {"staff_no": username, "auth_kind": "ldap"}
+
+    # LDAP 的密码由域控校验，本地库只用来记失败次数与锁定状态
+    user = svc.find_user(username)
+    check_locked(user)
     try:
-        user = svc.login_ldap(body.username, body.password)
+        user = svc.login_ldap(username, body.password)
     except ValueError as e:
-        login_throttle.record_failure(key)
+        if user is not None:
+            request.state.audit_operator_id = user.id
+            record_failure(db, user)
+            db.commit()
         raise BusinessError(str(e)) from e
-    login_throttle.reset(key)
+    request.state.audit_operator_id = user.id
+    record_success(db, user)
     db.commit()
     token = create_access_token(user.id, {"pv": password_version(user)})
     return ok({"access_token": token, "token_type": "bearer", "user": {"id": user.id, "name": user.name}})
@@ -131,16 +226,51 @@ def callback(
     # CAS 用 ticket；SAML 用 SAMLResponse
     ticket: str | None = Query(default=None),
     SAMLResponse: str | None = Query(default=None),  # noqa: N803
+    format: str | None = Query(default=None, description="传 json 时返回 JSON（脚本兼容）"),
     db: Session = Depends(get_db),
 ):
+    """第三方登录回调
+
+    ## 为什么改 302
+
+    原实现 `return ok(data)` 直接把 JSON 吐给浏览器 —— 用户在第三方登录成功后
+    停在一个 JSON 页面上，登录流程端到端断裂（7 种跳转协议全部不可用）。
+    现在改为 302 到前端落地页 `/login/oidc/complete?login_code=...`，
+    由前端用一次性登录码换 JWT 并跳转原目标页；失败也 302 并在 query 带 `error`。
+
+    保留 JSON 兼容：`Accept: application/json` 或 `?format=json` 时仍返回 JSON，
+    便于自动化脚本与测试调用（不改既有集成方式）。
+    """
     actual_code = code or ticket or SAMLResponse
     svc = AuthService(db, _public_base(request))
+    json_mode = _wants_json(request, format)
+    frontend_base = _frontend_base(request)
+
+    def _redirect(params: dict[str, str]) -> RedirectResponse:
+        url = f"{frontend_base}/login/oidc/complete?{urlencode(params)}"
+        # 302 而非 307：浏览器会以 GET 重新请求，避免把 state 参数再 POST 一遍
+        return RedirectResponse(url=url, status_code=302)
+
     try:
         data = svc.handle_callback(kind, actual_code, state, error)
+        db.commit()
     except ValueError as e:
-        raise BusinessError(str(e)) from e
-    db.commit()
-    return ok(data)
+        db.rollback()
+        msg = str(e)
+        logger.warning("SSO 回调失败（%s）：%s", kind, msg)
+        if json_mode:
+            raise BusinessError(msg) from e
+        return _redirect({"error": msg})
+
+    if json_mode:
+        return ok(data)
+
+    params = {"login_code": str(data.get("login_code") or "")}
+    redirect_after = data.get("redirect_after")
+    if redirect_after:
+        params["redirect_after"] = str(redirect_after)
+    params["bind"] = "1" if data.get("bind") else "0"
+    return _redirect(params)
 
 
 @router.post("/token", summary="用一次性登录码换 JWT")
@@ -153,6 +283,18 @@ def exchange_token(body: ExchangeIn, request: Request, db: Session = Depends(get
     db.commit()
     token = create_access_token(user.id, {"pv": password_version(user)})
     return ok({"access_token": token, "token_type": "bearer"})
+
+
+@router.post("/download-ticket", summary="换取一次性下载票据（60 秒）")
+def download_ticket(user: CurrentUser = Depends(get_current_user)):
+    """附件下载/预览专用短时票据
+
+    为什么需要：`<a href>` / `<img src>` / `window.open` 无法带 Authorization
+    头，早期只能把长期令牌拼在 `?token=` 上，令牌会进入浏览器历史与代理日志。
+    改为先换一张 60 秒、一次性的票据，泄露影响面大幅缩小。
+    前端（E 组）下载链路优先调用本接口。
+    """
+    return ok({"ticket": issue_download_ticket(user), "expires_in": DOWNLOAD_TICKET_TTL_SECONDS})
 
 
 # ---------------------------------------------------------------- 当前用户

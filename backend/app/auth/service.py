@@ -31,6 +31,15 @@ LOGIN_STATE_TTL = 600       # 10 分钟
 LOGIN_CODE_TTL = 60         # 一次性登录码 60 秒
 
 
+class CredentialError(ValueError):
+    """账号或口令错误
+
+    为什么要单独定义：登录限流只应统计「凭证错误」。
+    「认证方式已停用」「账号已停用」这类是配置/管理问题，
+    如果也算失败次数，管理员一关 SSO 就会把全校账号锁死。
+    """
+
+
 @dataclass
 class LoginResult:
     user: SysUser
@@ -54,7 +63,11 @@ class AuthService:
         return self.db.scalar(select(AuthProvider).where(AuthProvider.kind == kind))
 
     def public_providers(self) -> list[dict[str, Any]]:
-        """前端登录页用：只返回启用的、配置完整的"""
+        """前端登录页用：只返回启用的、配置完整的
+
+        返回字段含 enabled/flow：前端据此区分「跳转按钮」(flow=redirect)
+        与「域账号表单」(flow=post 且 kind=ldap)，不再靠 kind 硬编码。
+        """
         out = []
         for p in self.list_providers(only_enabled=True):
             adapter = self.adapters.get(p.kind)
@@ -70,6 +83,7 @@ class AuthService:
                 {
                     "kind": p.kind,
                     "display_name": p.display_name or adapter.display_name,
+                    "enabled": bool(p.enabled),
                     "flow": adapter.flow,
                     "callback_path": adapter.callback_path,
                 }
@@ -160,11 +174,26 @@ class AuthService:
             return {"ok": False, "detail": str(e)}
 
     # ------------------------------------------------------------ 本地密码登录
+    def find_user(self, username: str) -> SysUser | None:
+        """按工号取用户（登录限流需要先拿到用户行才能检查/累计锁定状态）"""
+        if not username:
+            return None
+        return self.db.scalar(
+            select(SysUser).where(SysUser.staff_no == username.strip())
+        )
+
     def login_password(self, username: str, password: str) -> SysUser:
-        user = self.db.scalar(select(SysUser).where(SysUser.staff_no == username))
+        # 为什么加 provider 校验：管理员在认证配置里把「账号密码」关掉后
+        # （强制全校走 SSO），原实现仍然能用本地密码登录，停用形同虚设。
+        # 与 login_ldap 的 `p.enabled` 判断保持一致。
+        p = self.get_provider("password")
+        if p is not None and not p.enabled:
+            raise ValueError("账号密码登录已停用，请使用单点登录")
+
+        user = self.find_user(username)
         if user is None or not verify_password(password, user.password_hash):
             # 统一错误信息，不暴露用户是否存在
-            raise ValueError("用户名或密码错误")
+            raise CredentialError("用户名或密码错误")
         if user.status != "ACTIVE":
             raise ValueError("账号已停用，请联系管理员")
         user.last_login_at = datetime.now(UTC)

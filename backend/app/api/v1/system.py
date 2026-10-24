@@ -1,7 +1,12 @@
-"""系统管理 API：用户、角色、权限、参数、免填日历、审计日志"""
+"""系统管理 API：用户、角色、权限、参数、免填日历、审计日志、备份"""
 from __future__ import annotations
 
-from datetime import date
+import logging
+import os
+import subprocess
+import sys
+from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Query, UploadFile
@@ -10,6 +15,7 @@ from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.deps import CurrentUser, get_current_user, require_any_perm, require_perm
 from app.db.dialect import ilike
 from app.core.exceptions import BusinessError, NotFoundError
@@ -28,6 +34,8 @@ from app.models.system import (
     SysUserRole,
 )
 from app.services.config_service import ConfigService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/system", tags=["系统管理"])
 
@@ -159,8 +167,42 @@ def update_user(user_id: int, body: UserUpdateIn, db: Session = Depends(get_db))
         u.password_hash = hash_password(pwd)
         # 管理员重置密码后，用户下次登录必须自己改
         u.must_change_password = True
+        # 为什么必须同步 password_updated_at：
+        # 令牌里的 pv 声明 = password_updated_at 的时间戳（见 core/security.py）。
+        # 原来重置密码不更新这个字段，pv 仍是旧值（未改过密为 0），
+        # 被重置前的旧令牌继续有效 —— 等于"改密踢人"对管理员重置完全失效。
+        now = datetime.now(UTC)
+        prev = u.password_updated_at
+        if prev is not None:
+            prev_utc = prev.replace(tzinfo=UTC) if prev.tzinfo is None else prev
+            # pv 是秒级时间戳：同一秒内重置两次会得到相同 pv，
+            # 旧令牌反而不会失效，这里保证严格递增（+1 秒兜底）。
+            if int(now.timestamp()) <= int(prev_utc.timestamp()):
+                now = prev_utc.replace(microsecond=0) + timedelta(seconds=1)
+        u.password_updated_at = now
     db.commit()
     return ok()
+
+
+@router.post(
+    "/users/{user_id}/unlock",
+    summary="手动解锁被登录限流锁定的账号",
+    dependencies=[Depends(require_perm("system:user"))],
+)
+def unlock_account(user_id: int, db: Session = Depends(get_db)):
+    """管理员解锁入口
+
+    背景：登录失败限流改为落库后，用户被锁只能干等 15 分钟；
+    运维需要在用户报障时能立即放行（早期进程内实现连"解锁"这个概念都没有）。
+    """
+    from app.core.login_guard import unlock_user
+
+    u = db.get(SysUser, user_id)
+    if u is None:
+        raise NotFoundError("用户不存在")
+    unlock_user(db, u)
+    db.commit()
+    return ok({"unlocked": True})
 
 
 @router.delete("/users/{user_id}", summary="停用用户", dependencies=[Depends(require_perm("system:user"))])
@@ -617,3 +659,97 @@ async def import_colleges(
     else:
         db.commit()
     return ok(result.to_dict())
+
+
+# ================================================================ 数据库备份
+# 背景（doc/闭环缺口汇总-20261024.md 3.8）：
+# 备份 job 天天跑，但管理端看不到「有没有备份成功、最近一次是什么时候」，
+# 也没有手动触发入口 —— 管理员只能 SSH 上去 ls 目录。
+# 这里补两个只读/触发接口，真正的备份逻辑仍在 scripts/backup.py（跨平台）。
+BACKUP_SUFFIXES = (".dump", ".db.gz", ".sql.gz", ".tar.gz")
+
+
+def _backup_dir() -> Path:
+    d = Path(settings.backup_dir)
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _list_backup_files() -> list[Path]:
+    out_dir = _backup_dir()
+    files = [f for f in out_dir.glob("pm_*") if f.is_file() and f.name.endswith(BACKUP_SUFFIXES)]
+    return sorted(files, key=lambda p: p.stat().st_mtime, reverse=True)
+
+
+def _backup_item(path: Path) -> dict:
+    st = path.stat()
+    return {
+        "name": path.name,
+        "size_mb": round(st.st_size / 1024 / 1024, 2),
+        "created_at": datetime.fromtimestamp(st.st_mtime, tz=UTC),
+        "path": str(path),
+    }
+
+
+@router.get(
+    "/backups",
+    summary="备份文件列表",
+    dependencies=[Depends(require_perm("system:config"))],
+)
+def list_backups():
+    """列出备份目录中的备份文件（名称/大小/时间）
+
+    同时支持 SQLite（pm_*.db.gz）与 PostgreSQL（pm_*.dump）两种命名，
+    因为系统支持双数据库部署，运维页面不该只认一种。
+    """
+    return ok([_backup_item(f) for f in _list_backup_files()])
+
+
+@router.post(
+    "/backups/run",
+    summary="手动触发一次数据库备份",
+    dependencies=[Depends(require_perm("system:config"))],
+)
+def run_backup():
+    """同步执行 scripts/backup.py
+
+    为什么同步：备份通常几秒到几十秒，管理员点一下要能立刻看到结果；
+    做成异步还得引入任务队列与轮询，收益不大。
+    用当前解释器执行，确保与 Web 进程同一虚拟环境、同一份配置。
+    """
+    backend_root = Path(__file__).resolve().parent.parent.parent.parent
+    script = backend_root / "scripts" / "backup.py"
+    if not script.is_file():
+        raise BusinessError(f"备份脚本不存在：{script}")
+
+    before = {f.name for f in _list_backup_files()}
+    try:
+        result = subprocess.run(
+            [sys.executable, str(script)],
+            capture_output=True,
+            timeout=1800,
+            cwd=str(backend_root),
+            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+        )
+    except subprocess.TimeoutExpired as e:
+        raise BusinessError("备份超时（超过 30 分钟）") from e
+    except OSError as e:
+        raise BusinessError(f"无法执行备份脚本：{e}") from e
+
+    stdout = (result.stdout or b"").decode("utf-8", errors="replace")
+    stderr = (result.stderr or b"").decode("utf-8", errors="replace")
+    for line in stdout.strip().splitlines()[-5:]:
+        logger.info("[backup] %s", line)
+
+    if result.returncode != 0:
+        raise BusinessError(f"备份失败：{(stderr or stdout).strip()[:500]}")
+
+    # 找出本次新增的文件（备份脚本按时间戳命名，新旧文件可直接比对）
+    created = [f for f in _list_backup_files() if f.name not in before]
+    if not created:
+        # 极端情况：脚本成功但没产出新文件（如目录配置不一致），视为失败
+        raise BusinessError("备份脚本执行完成但未生成新备份文件，请检查 PM_BACKUP_DIR")
+    latest = created[0]
+    item = _backup_item(latest)
+    return ok({"name": item["name"], "size_mb": item["size_mb"]})
+

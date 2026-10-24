@@ -202,7 +202,9 @@ PM_DATABASE_URL=postgresql+psycopg://${dbUser}:${dbPass}@127.0.0.1:5432/$dbName
 PM_APP_NAME=产教融合项目管理系统
 PM_DEBUG=false
 PM_SECRET_KEY=$secret
-PM_ACCESS_TOKEN_EXPIRE_MINUTES=30
+# 8 小时（480 分钟）：内网系统一天一班，30 分钟会让用户反复被踢下线。
+# 与 backend/app/core/config.py 的 access_token_expire_minutes 默认值保持一致。
+PM_ACCESS_TOKEN_EXPIRE_MINUTES=480
 
 PM_DATA_DIR=$($DataDir.Replace('\','/'))
 PM_UPLOAD_DIR=$uploadPath
@@ -220,6 +222,12 @@ PM_BACKUP_ENABLED=true
 PM_BACKUP_HOUR=2
 PM_BACKUP_DIR=$backupPath
 PM_BACKUP_KEEP_DAYS=30
+
+# 数据保留清理（默认关闭：确认保留期后再改成 true，见 scripts/cleanup.py）
+PM_AUDIT_RETENTION_YEARS=2
+PM_SNAPSHOT_RETENTION_YEARS=3
+PM_CLEANUP_ENABLED=false
+PM_CLEANUP_HOUR=3
 
 PM_SMTP_HOST=
 PM_SMTP_PORT=465
