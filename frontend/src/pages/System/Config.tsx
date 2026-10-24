@@ -17,6 +17,17 @@ interface ConfigRow {
   remark: string | null
 }
 
+/**
+ * 预留参数：页面上可改，但当前版本没有代码读取它们。
+ * 与其让管理员改完没反应（比没这个开关更伤信任），不如明确标注。
+ */
+const RESERVED_KEYS = new Set([
+  'aggregate.school.mode',
+  'system.session_idle_minutes',
+  'system.audit_retention_years',
+  'system.snapshot_retention_years',
+])
+
 /** 系统参数配置（守卫在外层，避免 Hook 数量变化） */
 export default function ConfigPage() {
   const can = useCan()
@@ -71,7 +82,16 @@ function ConfigPageInner() {
       title: '参数键',
       dataIndex: 'key',
       width: 300,
-      render: (v: string) => <code style={{ fontSize: 13 }}>{v}</code>,
+      render: (v: string) => (
+        <Space size={6}>
+          <code style={{ fontSize: 13 }}>{v}</code>
+          {RESERVED_KEYS.has(v) && (
+            <Tag color="default" title="该参数为后续版本预留，当前修改不影响业务逻辑">
+              预留
+            </Tag>
+          )}
+        </Space>
+      ),
     },
     {
       title: '当前值',
@@ -108,7 +128,7 @@ function ConfigPageInner() {
         showIcon
         style={{ marginBottom: 16 }}
         message="参数修改后立即生效，影响预警阈值、报表时限、汇总口径等"
-        description="常见参数：alert.AL-01.deviation（滞后阈值）、alert.AL-03.days（停滞天数）、report.correct_days（报表更正期）、report.daily.enabled（是否启用日报）"
+        description="常见参数：alert.AL-01.deviation（滞后阈值）、alert.AL-03.days（停滞天数）、alert.AL-08.days（风险登记默认闭环天数）、report.correct_days（报表更正期）、report.daily.enabled（是否启用日报）。标注「预留」的参数当前版本未接入业务逻辑。"
       />
 
       <Space style={{ marginBottom: 16 }}>

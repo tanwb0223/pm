@@ -53,7 +53,7 @@ cd backend
 | `pnpm dev` | 启动开发服务器（热更新） |
 | `pnpm build` | 生产构建（类型检查 + 打包） |
 | `pnpm preview` | 预览构建产物 |
-| `pnpm lint` | ESLint 检查 |
+| `pnpm lint` | TypeScript 类型检查（ESLint 尚未接入） |
 | `pnpm clean` | 清理 node_modules 和 dist |
 | `pnpm rebuild` | 清理后重新安装并构建 |
 

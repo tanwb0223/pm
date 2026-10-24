@@ -35,9 +35,9 @@ export const authApi = {
     }),
   exchangeToken: (code: string) =>
     post<LoginResult>('/auth/token', { code }),
-  /** 修改自己的密码（校验原密码 + 强度） */
+  /** 修改自己的密码（校验原密码 + 强度）；返回换发的新令牌 */
   changePassword: (oldPassword: string, newPassword: string) =>
-    post<{ changed: boolean }>('/auth/change-password', {
+    post<{ changed: boolean; access_token?: string }>('/auth/change-password', {
       old_password: oldPassword,
       new_password: newPassword,
     }),

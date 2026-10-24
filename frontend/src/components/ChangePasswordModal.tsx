@@ -3,6 +3,7 @@ import { Form, Input, Modal, message } from 'antd'
 import { LockOutlined } from '@ant-design/icons'
 
 import { authApi } from '@/api'
+import { useAuthStore } from '@/stores/auth'
 
 interface Props {
   open: boolean
@@ -32,12 +33,15 @@ export default function ChangePasswordModal({
 }: Props) {
   const [form] = Form.useForm<FormValues>()
   const [loading, setLoading] = useState(false)
+  const setToken = useAuthStore((s) => s.setToken)
 
   const submit = async () => {
     const values = await form.validateFields()
     setLoading(true)
     try {
-      await authApi.changePassword(values.old_password, values.new_password)
+      const resp = await authApi.changePassword(values.old_password, values.new_password)
+      // 后端改密后旧令牌立即失效，这里换上刚签发的新令牌，避免被踢下线
+      if (resp.access_token) setToken(resp.access_token)
       message.success('密码已修改，请牢记新密码')
       form.resetFields()
       onSuccess?.()
