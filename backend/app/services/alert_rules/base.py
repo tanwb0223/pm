@@ -23,10 +23,18 @@ class AlertCandidate:
     owner_id: int | None = None
     college_owner_id: int | None = None
     major_owner_id: int | None = None
+    # 去重键后缀：默认按「子项目 + 规则」去重，但有些规则的同源对象不是
+    # 子项目（如 AL-08 风险超期，一条子项目下可能有多条风险）。
+    # 早期 AL-08 全部 dedup_key = "-:AL-08"，多条风险被合并成一条，
+    # 处置人不知道是哪条风险超期（P1-9）。这里允许规则指定后缀。
+    dedup_suffix: str | None = None
 
     @property
     def dedup_key(self) -> str:
-        return f"{self.sub_id or '-'}:{self.alert_type}"
+        key = f"{self.sub_id or '-'}:{self.alert_type}"
+        if self.dedup_suffix:
+            key = f"{key}:{self.dedup_suffix}"
+        return key[:128]
 
 
 class AlertRule(ABC):

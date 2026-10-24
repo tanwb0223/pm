@@ -9,7 +9,6 @@
 """
 from __future__ import annotations
 
-import json
 import logging
 import os
 from datetime import UTC, date, datetime, time, timedelta
@@ -122,7 +121,6 @@ def job_daily_digest() -> None:
     由 NotifyService 实际投递邮件；未配置 SMTP 时记 SKIPPED 不影响任务。
     """
     from app.models.alert import Alert
-    from app.models.system import NotifyLog, SysUser
 
     db = SessionLocal()
     try:
@@ -154,14 +152,16 @@ def job_daily_digest() -> None:
             new_yesterday, pending, overdue, red,
         )
 
-        # 收件人：系统管理员（摘要发给全局管理者，不按数据范围拆分）
+        # 收件人：系统管理员 + 项目总负责人
+        # （需求 6.1 第 3 项：校领导在「我的督办」看汇总，不收单条；
+        #   这里把摘要同时发给归口部门，避免只有超管能看到全局态势）
         admins = list(
             db.scalars(
                 text(
-                    "SELECT u.id FROM sys_user u "
+                    "SELECT DISTINCT u.id FROM sys_user u "
                     "JOIN sys_user_role ur ON ur.user_id=u.id "
                     "JOIN sys_role r ON r.id=ur.role_id "
-                    "WHERE r.code='SYS_ADMIN' AND u.status='ACTIVE'"
+                    "WHERE r.code IN ('SYS_ADMIN','PROJECT_OWNER') AND u.status='ACTIVE'"
                 )
             )
         )
@@ -169,31 +169,39 @@ def job_daily_digest() -> None:
             logger.warning("每日摘要：未找到启用的系统管理员，跳过推送")
             return
 
-        stats = json.dumps(
-            {
-                "new_yesterday": new_yesterday,
-                "pending": pending,
-                "overdue": overdue,
-                "red": red,
-                "date": yesterday.isoformat(),
-            },
-            ensure_ascii=False,
+        # 摘要正文：直接拼成可读文本，不再把统计 JSON 塞进 NotifyLog.error。
+        # 早期实现把 JSON 存在 error 字段再解析，一旦首次投递失败
+        # （未配 SMTP / 网络抖动），error 会被失败原因覆盖，
+        # 重投出去的就是「昨日新增：0 条」这种全 0 正文。
+        body = "\n".join(
+            [
+                "以下为今日预警汇总：",
+                "",
+                f"  昨日新增：{new_yesterday} 条",
+                f"  当前待处置：{pending} 条",
+                f"  其中已超时：{overdue} 条",
+                f"  红色预警：{red} 条",
+                "",
+                "请登录系统处理：站内「预警中心」。",
+            ]
         )
-        from app.services.notify_service import NotifyService, PENDING_MARK
+        subject = "【每日预警摘要】" + yesterday.strftime("%Y-%m-%d")
+
+        from app.services.notify_service import NotifyService
 
         svc = NotifyService(db)
         for uid in admins:
-            row = NotifyLog(
+            # 1) 站内消息：无论邮件通道是否可用，收件人登录就能看到
+            svc.push_message(
+                receiver_id=uid,
                 biz_type="DIGEST",
                 biz_id=None,
-                channel="EMAIL",
-                receiver_id=uid,
-                status="FAILED",
-                error=stats,  # 正文数据暂存在 error，发送成功后清空
+                title=subject,
+                body=body,
+                level="RED" if red else "ORANGE",
             )
-            db.add(row)
-            db.flush()
-            svc.deliver(row.id)
+            # 2) 邮件：正文单独传入，不再借 error 字段
+            svc.deliver_digest(uid, subject, body)
         db.commit()
     except Exception:
         db.rollback()
@@ -265,6 +273,43 @@ def job_retry_notify() -> None:
         logger.exception("通知重投失败")
     finally:
         db.close()
+
+
+def job_cleanup() -> None:
+    """每日 cleanup_hour 点：按保留期清理审计日志与进度快照
+
+    背景：system.audit_retention_years / system.snapshot_retention_years
+    两个参数一直没有消费方，audit_log 与 prog_snapshot 只增不减。
+    默认 PM_CLEANUP_ENABLED=false —— 删历史数据不可逆，必须显式开启。
+    """
+    import subprocess
+    import sys as _sys
+
+    backend_root = Path(__file__).resolve().parent.parent.parent
+    script = backend_root / "scripts" / "cleanup.py"
+    if not script.is_file():
+        logger.warning("未找到清理脚本 %s，跳过", script)
+        return
+
+    logger.info("开始数据保留清理（%s）...", script)
+    try:
+        result = subprocess.run(
+            [_sys.executable, str(script)],
+            capture_output=True,
+            timeout=1800,
+            cwd=str(backend_root),
+            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+        )
+        stdout = (result.stdout or b"").decode("utf-8", errors="replace")
+        stderr = (result.stderr or b"").decode("utf-8", errors="replace")
+        for line in stdout.strip().splitlines():
+            logger.info("[cleanup] %s", line)
+        if result.returncode != 0:
+            logger.error("[cleanup] 清理失败: %s", stderr.strip()[:500])
+    except subprocess.TimeoutExpired:
+        logger.error("[cleanup] 清理超时（超过 30 分钟）")
+    except Exception:
+        logger.exception("[cleanup] 清理异常")
 
 
 # ---------------------------------------------------------------- 启停
@@ -339,6 +384,15 @@ def start_scheduler() -> None:
         id="retry_notify",
         replace_existing=True,
     )
+
+    # 每日 cleanup_hour 点数据保留清理（默认关闭，删历史不可逆）
+    if settings.cleanup_enabled:
+        _scheduler.add_job(
+            lambda: _with_lock(LOCK_SNAPSHOT_SCAN + 6, job_cleanup),
+            CronTrigger(hour=settings.cleanup_hour, minute=30),
+            id="cleanup",
+            replace_existing=True,
+        )
 
     _scheduler.start()
     logger.info("定时任务已启动：%s", [j.id for j in _scheduler.get_jobs()])

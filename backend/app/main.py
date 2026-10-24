@@ -114,6 +114,7 @@ from app.api.v1 import system as system_router  # noqa: E402
 from app.api.v1 import report as report_router  # noqa: E402
 from app.api.v1 import progress as progress_router  # noqa: E402
 from app.api.v1 import project as project_router  # noqa: E402
+from app.api.v1 import message as message_router  # noqa: E402
 
 app.include_router(auth_router.router)
 app.include_router(project_router.router)
@@ -124,6 +125,8 @@ app.include_router(report_router.router)
 app.include_router(export_router.router)
 app.include_router(risk_router.router)
 app.include_router(system_router.router)
+# 站内消息 + 定时任务运行记录（/api/messages、/api/system/jobs）
+app.include_router(message_router.router)
 
 
 # ---------------------------------------------------------------- 前端静态文件（可选）
