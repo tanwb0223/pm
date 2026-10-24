@@ -129,6 +129,30 @@ def init_db() -> None:
 # 权威定义在 app/core/permissions.py 的 ROLE_PERMISSIONS。
 # 那里按「看得到 → 做得了 → 管得住」逐角色叠加，避免出现
 # "角色叫填报人却没有填报权限" 这类问题。
+def _ensure_permissions(db) -> None:
+    """补齐缺失的权限点（幂等）
+
+    背景：ALL_PERMISSIONS 声明 40 项，但历史上 session.py 的种子清单只写了
+    38 项（漏 report:grant），全新部署后除超管外没人能开逾期补填。
+    现在权限清单从 app/core/permissions.py 统一生成，这里对存量库做补插。
+    """
+    from sqlalchemy import select
+
+    from app.core.permissions import permission_rows
+    from app.models.system import SysPermission
+
+    existing = set(db.scalars(select(SysPermission.code)))
+    added = 0
+    for code, name, ptype, sort in permission_rows():
+        if code in existing:
+            continue
+        db.add(SysPermission(code=code, name=name, type=ptype, sort=sort))
+        added += 1
+    if added:
+        db.commit()
+        logger.info("已补齐缺失权限点：%d 条", added)
+
+
 def _ensure_role_permissions(db) -> None:
     """按角色矩阵补齐权限（幂等，只增不减）
 
@@ -204,16 +228,24 @@ _DEFAULT_CONFIGS: list[tuple[str, str, str, str]] = [
     ("alert.AL-08.days", "7", "INT", "风险闭环默认天数"),
     ("alert.AL-11.enabled", "true", "BOOLEAN", "长期零进度预警开关"),
     ("alert.AL-11.days", "60", "INT", "零进度判定天数"),
+    # 其余规则的开关（需求 3.3(1)：除 AL-09/AL-10 外都可关）
+    ("alert.AL-04.enabled", "true", "BOOLEAN", "进度回调提示开关"),
+    ("alert.AL-06.enabled", "true", "BOOLEAN", "单次报表逾期预警开关"),
+    ("alert.AL-09.enabled", "true", "BOOLEAN", "责任空缺预警开关（不可关闭，仅占位）"),
+    ("alert.AL-10.enabled", "true", "BOOLEAN", "计划缺失预警开关（不可关闭，仅占位）"),
     # 处置时限
     ("alert.red.deadline_days", "3", "INT", "红色预警处置天数"),
     ("alert.orange.deadline_days", "7", "INT", "橙色预警处置天数"),
     # 报表时限
-    ("report.daily.enabled", "false", "BOOLEAN", "日报是否启用（按项目类型可覆盖）"),
+    ("report.daily.enabled", "false", "BOOLEAN", "日报全局开关（项目可单独覆盖）"),
     ("report.weekly.deadline_weekday", "1", "INT", "周报截止星期（1=周一）"),
     ("report.weekly.deadline_hour", "12", "INT", "周报截止小时"),
     ("report.monthly.deadline_workday", "3", "INT", "月报截止第几个工作日"),
     ("report.monthly.deadline_hour", "18", "INT", "月报截止小时"),
-    ("report.correct_days", "3", "INT", "填报人自行更正天数"),
+    ("report.correct_days", "3", "INT", "填报人自行更正天数（提交后 N 天内）"),
+    ("report.backfill_days", "3", "INT", "逾期后允许自行补填的天数"),
+    ("report.close_need_monthly", "true", "BOOLEAN", "结项是否要求至少 1 份月报"),
+    ("report.close_block_open_alert", "true", "BOOLEAN", "结项是否要求无未关闭预警"),
     # 汇总
     ("aggregate.school.mode", "EQUAL", "STRING", "全校进度汇总方式：EQUAL 等权"),
     ("aggregate.include_closed", "true", "BOOLEAN", "已结项子项目是否按100%计入"),
@@ -222,9 +254,10 @@ _DEFAULT_CONFIGS: list[tuple[str, str, str, str]] = [
     ("notify.digest.minute", "30", "INT", "每日摘要分钟"),
     ("notify.sms.enabled", "false", "BOOLEAN", "短信开关（仅红色预警）"),
     ("notify.email.enabled", "true", "BOOLEAN", "邮件开关"),
+    ("notify.orange.email", "true", "BOOLEAN", "橙色预警是否也发邮件"),
     # 系统
     ("system.audit_retention_years", "2", "INT", "审计日志保留年数"),
-    ("system.session_idle_minutes", "30", "INT", "会话空闲超时分钟"),
+    ("system.session_idle_minutes", "30", "INT", "会话空闲超时分钟（预留，未接入）"),
     ("system.snapshot_retention_years", "3", "INT", "快照保留年数"),
 ]
 
@@ -269,6 +302,7 @@ def init_seed_data() -> None:
     with SessionLocal() as db:
         # 已有数据就跳过（但角色权限可能因历史版本缺失，单独兜底补齐）
         if db.scalar(select(SysRole).limit(1)):
+            _ensure_permissions(db)
             _ensure_role_permissions(db)
             _ensure_configs(db)
             return
@@ -293,49 +327,15 @@ def init_seed_data() -> None:
             role_map[code] = r.id
 
         # 权限（与 0001_init.py 保持一致）
-        perms = [
-            ("dashboard", "我的督办", "MODULE"),
-            ("dashboard:view", "查看督办", "PAGE"),
-            ("project", "项目管理", "MODULE"),
-            ("project:major", "大项目", "PAGE"),
-            ("project:major:view", "查看大项目", "ACTION"),
-            ("project:major:edit", "编辑大项目", "ACTION"),
-            ("project:college", "学院分工", "PAGE"),
-            ("project:college:edit", "编辑学院分工", "ACTION"),
-            ("project:sub", "子项目", "PAGE"),
-            ("project:sub:view", "查看子项目", "ACTION"),
-            ("project:sub:edit", "编辑子项目", "ACTION"),
-            ("project:check", "完整性检查", "ACTION"),
-            ("progress", "进度管控", "MODULE"),
-            ("progress:table", "进度总表", "PAGE"),
-            ("progress:update", "更新进度", "ACTION"),
-            ("progress:onbehalf", "代填进度", "ACTION"),
-            ("progress:urge", "催办", "ACTION"),
-            ("alert", "预警管理", "MODULE"),
-            ("alert:list", "预警列表", "PAGE"),
-            ("alert:claim", "认领预警", "ACTION"),
-            ("alert:close", "关闭预警", "ACTION"),
-            ("alert:transfer", "转交预警", "ACTION"),
-            ("report", "报表管理", "MODULE"),
-            ("report:fill", "填报报表", "ACTION"),
-            ("report:void", "作废报表", "ACTION"),
-            ("export", "数据导出", "MODULE"),
-            ("export:ledger", "导出台账", "ACTION"),
-            ("export:progress", "导出进度", "ACTION"),
-            ("risk", "风险登记", "MODULE"),
-            ("risk:list", "风险列表", "PAGE"),
-            ("risk:edit", "编辑风险", "ACTION"),
-            ("system", "系统管理", "MODULE"),
-            ("system:user", "用户管理", "PAGE"),
-            ("system:role", "角色权限", "PAGE"),
-            ("system:org", "组织管理", "PAGE"),
-            ("system:config", "参数配置", "PAGE"),
-            ("system:holiday", "免填日历", "PAGE"),
-            ("system:audit", "操作日志", "PAGE"),
-        ]
+        # 权限：从 app/core/permissions.py 的 ALL_PERMISSIONS 生成，不再手写清单。
+        # 历史上手写清单漏了 report:grant（声明 39 项 / 种子 38 项），
+        # 导致全新部署除超管外没人能开逾期补填。
+        from app.core.permissions import ROLE_PERMISSIONS, permission_rows
+
+        perms = permission_rows()
         perm_map = {}
-        for i, (code, name, ptype) in enumerate(perms):
-            p = SysPermission(code=code, name=name, type=ptype, sort=i)
+        for code, name, ptype, sort in perms:
+            p = SysPermission(code=code, name=name, type=ptype, sort=sort)
             db.add(p)
             db.flush()
             perm_map[code] = p.id

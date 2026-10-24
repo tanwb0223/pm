@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 # 与 alembic/versions/ 下最新的 revision 保持一致
 # 新增迁移时记得同步更新这里
-LATEST_REVISION = "0007_report_grace"
+LATEST_REVISION = "0008_closure_fixes"
 
 # alembic.ini 位置：app/db/alembic_sync.py → backend/alembic.ini
 _ALEMBIC_INI = Path(__file__).resolve().parent.parent.parent / "alembic.ini"
@@ -156,10 +156,17 @@ def _repair_alert_action_operator_id(engine, insp) -> bool:
         return False
     cols = {c["name"]: c for c in insp.get_columns("alert_action")}
     col = cols.get("operator_id")
-    if col is None or col.get("nullable", True):
-        return False  # 不存在或已是可空，无需修复
+    nullable_ok = col is not None and col.get("nullable", True)
+    # 0008 新增 MEASURE（处置措施）动作，旧库的 CHECK 约束不含它，
+    # 写入会直接报错，因此也要重建。
+    checks = " ".join(
+        (c.get("sqltext") or "") for c in insp.get_check_constraints("alert_action")
+    )
+    measure_ok = "MEASURE" in checks.upper()
+    if nullable_ok and measure_ok:
+        return False  # 已是最新结构，无需修复
 
-    logger.info("修复历史漂移：alert_action.operator_id 重建为可空")
+    logger.info("修复历史漂移：alert_action 重建（operator_id 可空 + MEASURE 动作）")
     with engine.begin() as conn:
         conn.execute(text("DROP TABLE IF EXISTS alert_action_migrate_tmp"))
         conn.execute(
@@ -173,7 +180,7 @@ def _repair_alert_action_operator_id(engine, insp) -> bool:
                     reason VARCHAR(500),
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
                     PRIMARY KEY (id),
-                    CONSTRAINT ck_action_type CHECK (action IN ('CLAIM','TRANSFER','CLOSE','IGNORE','ESCALATE')),
+                    CONSTRAINT ck_action_type CHECK (action IN ('CLAIM','TRANSFER','CLOSE','IGNORE','ESCALATE','MEASURE')),
                     FOREIGN KEY(alert_id) REFERENCES alert (id),
                     FOREIGN KEY(operator_id) REFERENCES sys_user (id)
                 )
@@ -220,9 +227,46 @@ def _repair_user_password_columns(engine, insp) -> bool:
     return added
 
 
+def _repair_new_columns(engine, insp) -> bool:
+    """补齐 0008 新增的列（对齐 alembic 0008 与模型）
+
+    背景：SQLite 部署走 create_all 建表，create_all 只建新表、不给旧表加列。
+    0008 新增的列如果只写在迁移里，SQLite 老库升级后仍然缺列，
+    一查就报 "no such column"。这里按清单用 ALTER TABLE ADD COLUMN 补齐。
+    """
+    # (表名, 列名, SQLite 列定义)
+    columns = [
+        ("sys_user", "failed_login_count", "INTEGER NOT NULL DEFAULT 0"),
+        ("sys_user", "locked_until", "DATETIME"),
+        ("report", "on_behalf_of", "INTEGER"),
+        ("report_grace", "kind", "VARCHAR(16) NOT NULL DEFAULT 'BACKFILL'"),
+        ("proj_major", "daily_report_enabled", "BOOLEAN"),
+        ("proj_major", "close_objection_at", "DATETIME"),
+        ("proj_major", "close_objection_by", "INTEGER"),
+        ("proj_major", "close_objection_reason", "VARCHAR(500)"),
+        ("prog_record", "event_type", "VARCHAR(16) NOT NULL DEFAULT 'FILL'"),
+        ("alert", "detail", "JSON"),
+    ]
+    tables = set(insp.get_table_names())
+    added = 0
+    with engine.begin() as conn:
+        for table, column, ddl in columns:
+            if table not in tables:
+                continue
+            cols = {c["name"] for c in insp.get_columns(table)}
+            if column in cols:
+                continue
+            conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
+            added += 1
+    if added:
+        logger.info("修复历史漂移：补齐 0008 新增列 %d 个", added)
+    return added > 0
+
+
 _KNOWN_REPAIRS = [
     _repair_alert_action_operator_id,
     _repair_user_password_columns,
+    _repair_new_columns,
 ]
 
 

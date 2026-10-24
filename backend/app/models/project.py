@@ -49,6 +49,17 @@ class ProjMajor(Base):
     owner_id: Mapped[int | None] = mapped_column(BIGINT_PK, ForeignKey("sys_user.id"), nullable=True)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="ACTIVE")
 
+    # 日报开关：需求 6.1 第 5 项要求「按项目类型开关，默认关、试点项目打开」。
+    # None = 跟随全局参数 report.daily.enabled；True/False = 本项目单独指定。
+    daily_report_enabled: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+
+    # 结项异议（需求 6.3 第 27 项）：大项目负责人可在结项后 7 天内提出异议退回
+    close_objection_at: Mapped[datetime | None] = aware_timestamp(nullable=True)
+    close_objection_by: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("sys_user.id"), nullable=True
+    )
+    close_objection_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
     # 第 38 项：原始计划（立项时锁定）
     original_start: Mapped[date | None] = mapped_column(Date, nullable=True)
     original_end: Mapped[date | None] = mapped_column(Date, nullable=True)
@@ -155,6 +166,12 @@ class ProgRecord(Base):
     sub_id: Mapped[int] = mapped_column(BIGINT_PK, ForeignKey("proj_sub.id"), nullable=False)
     progress: Mapped[int] = mapped_column(Integer, nullable=False)
     note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # 事件类型：FILL=正常填报 / URGE=催办 / REPORT=报表同步进度
+    # 早期催办也写 ProgRecord，导致「上次说明」被催办文案污染、周报初稿里
+    # 混进「【催办】…」。加 event_type 后，last_note 与初稿只取 FILL。
+    event_type: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="FILL", server_default="FILL"
+    )
     is_no_change: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_rollback: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     rollback_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)

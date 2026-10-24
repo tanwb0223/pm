@@ -65,6 +65,9 @@ class Alert(Base):
     )
     closed_at: Mapped[datetime | None] = aware_timestamp(nullable=True)
     close_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # 触发详情（规则算出来的连续天数/阈值/风险描述…）。早期 candidate.detail
+    # 从不落库，处置人只看到「有预警」看不到「为什么」。
+    detail: Mapped[dict | None] = mapped_column(JSON_TYPE, nullable=True)
     escalated_at: Mapped[datetime | None] = aware_timestamp(nullable=True)
     dedup_key: Mapped[str] = mapped_column(String(128), nullable=False)
     merged_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
@@ -79,7 +82,8 @@ class AlertAction(Base):
     __tablename__ = "alert_action"
     __table_args__ = (
         CheckConstraint(
-            "action IN ('CLAIM','TRANSFER','CLOSE','IGNORE','ESCALATE')", name="ck_action_type"
+            "action IN ('CLAIM','TRANSFER','CLOSE','IGNORE','ESCALATE','MEASURE')",
+            name="ck_action_type",
         ),
         Index("idx_action_alert", "alert_id"),
     )

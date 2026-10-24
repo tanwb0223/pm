@@ -54,6 +54,11 @@ class SysUser(Base):
     password_updated_at: Mapped[datetime | None] = aware_timestamp(nullable=True)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="ACTIVE")
     last_login_at: Mapped[datetime | None] = aware_timestamp(nullable=True)
+    # 登录失败限流（落库，多 worker / 重启后仍有效；不再用进程内字典）
+    failed_login_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    locked_until: Mapped[datetime | None] = aware_timestamp(nullable=True)
     created_at: Mapped[datetime] = aware_timestamp(server_default=func.now())
     updated_at: Mapped[datetime] = aware_timestamp(server_default=func.now(), onupdate=func.now()
     )
@@ -175,3 +180,56 @@ class NotifyLog(Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     error: Mapped[str | None] = mapped_column(String(500), nullable=True)
     sent_at: Mapped[datetime] = aware_timestamp(server_default=func.now())
+
+
+class SysMessage(Base):
+    """站内消息（收件箱）
+
+    背景：早期 INNER 通道只往 notify_log 写一行状态就记 SUCCESS，
+    但 notify_log 是「投递日志」（管理员运维视角），没有标题/正文/已读，
+    被通知人根本读不到。本表才是用户视角的收件箱：
+
+    - 每条消息有独立标题与正文，不依赖发送时临时拼装
+    - read_at 为空表示未读，前端据此显示红点与未读数
+    - biz_type/biz_id 指回业务对象，点击可跳转（ALERT→预警中心，
+      URGE→进度总表，DIGEST→预警统计）
+    """
+
+    __tablename__ = "sys_message"
+    __table_args__ = (
+        Index("idx_message_receiver", "receiver_id", "read_at"),
+        Index("idx_message_biz", "biz_type", "biz_id"),
+        Index("idx_message_created", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True)
+    receiver_id: Mapped[int] = mapped_column(BIGINT_PK, ForeignKey("sys_user.id"), nullable=False)
+    biz_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    biz_id: Mapped[int | None] = mapped_column(BIGINT_PK, nullable=True)
+    level: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    body: Mapped[str] = mapped_column(String(2000), nullable=False, default="")
+    read_at: Mapped[datetime | None] = aware_timestamp(nullable=True)
+    created_at: Mapped[datetime] = aware_timestamp(server_default=func.now())
+
+
+class SysJobRun(Base):
+    """定时任务运行记录
+
+    背景：6 个 job 失败时只有 logger.exception，管理员在系统里看不到
+    昨晚快照/备份/扫描有没有成功。本表由 _with_lock 统一写入，
+    /api/system/jobs 暴露最近运行状态。
+    """
+
+    __tablename__ = "sys_job_run"
+    __table_args__ = (
+        Index("idx_job_run_job", "job_id", "started_at"),
+        Index("idx_job_run_status", "status", "started_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True)
+    job_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    started_at: Mapped[datetime] = aware_timestamp(server_default=func.now())
+    finished_at: Mapped[datetime | None] = aware_timestamp(nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="RUNNING")
+    message: Mapped[str | None] = mapped_column(String(1000), nullable=True)
