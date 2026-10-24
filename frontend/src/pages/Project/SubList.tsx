@@ -12,6 +12,7 @@ import {
   Popconfirm,
   Select,
   Space,
+  Tooltip,
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import dayjs, { type Dayjs } from 'dayjs'
@@ -100,6 +101,8 @@ export default function SubListPage() {
   // 新建/编辑/删除子项目需要 project:sub:edit
   // 原来这三个按钮无权限判断，只读用户也能看到（后端会 403）
   const canEdit = can('project:sub:edit')
+  // 结项确认单独一个权限点（需求 2.2：学院负责人确认，不再走审批）
+  const canClose = can('project:sub:close')
 
   // ---------------------------------------------------------------- 筛选
   const [fMajor, setFMajor] = useState<number | undefined>()
@@ -214,6 +217,25 @@ export default function SubListPage() {
     },
   })
 
+  // ---------------------------------------------------------------- 结项确认
+  // 需求 6.1 第 6 项：进度 100% + 材料齐（至少 1 份月报）+ 无未关闭预警 +
+  // 学院负责人确认。后端已按这三项校验，前端给一个独立入口（原先只能
+  // 在编辑弹窗里改状态，既没有提示也没有失败原因）。
+  const [closeTarget, setCloseTarget] = useState<Sub | null>(null)
+  const [closeForm] = Form.useForm<{ remark?: string }>()
+  const closeMutation = useMutation({
+    mutationFn: ({ id, remark }: { id: number; remark?: string }) => subApi.close(id, remark),
+    onSuccess: () => {
+      message.success('已结项')
+      setCloseTarget(null)
+      closeForm.resetFields()
+      void queryClient.invalidateQueries({ queryKey: ['subs'] })
+      void queryClient.invalidateQueries({ queryKey: ['major-subs'] })
+      void queryClient.invalidateQueries({ queryKey: ['majors'] })
+      void queryClient.invalidateQueries({ queryKey: ['alerts'] })
+    },
+  })
+
   const openEdit = (record: Sub) => {
     setEditing(record)
     editForm.resetFields()
@@ -274,26 +296,47 @@ export default function SubListPage() {
     {
       title: '操作',
       key: 'action',
-      width: 110,
-      render: (_, record: Sub) =>
-        canEdit ? (
+      width: 150,
+      render: (_, record: Sub) => {
+        // 结项后只读（后端也会拒绝一切字段修改）
+        const closed = record.status === 'CLOSED'
+        return canEdit || canClose ? (
           <Space size={4}>
-            <Button type="link" size="small" onClick={() => openEdit(record)}>
-              编辑
-            </Button>
-            <Popconfirm
-              title="确认删除该子项目？"
-              description="已结项的子项目不能删除"
-              onConfirm={() => removeMutation.mutate(record.id)}
-            >
-              <Button type="link" size="small" danger>
-                删除
+            {canEdit && !closed && (
+              <Button type="link" size="small" onClick={() => openEdit(record)}>
+                编辑
               </Button>
-            </Popconfirm>
+            )}
+            {canClose && !closed && record.status === 'IN_PROGRESS' && (
+              <Tooltip title="需进度 100%、至少 1 份月报、无未关闭预警，且由学院负责人确认">
+                <Button
+                  type="link"
+                  size="small"
+                  onClick={() => {
+                    setCloseTarget(record)
+                    closeForm.resetFields()
+                  }}
+                >
+                  结项
+                </Button>
+              </Tooltip>
+            )}
+            {canEdit && !closed && (
+              <Popconfirm
+                title="确认删除该子项目？"
+                description="已结项的子项目不能删除"
+                onConfirm={() => removeMutation.mutate(record.id)}
+              >
+                <Button type="link" size="small" danger>
+                  删除
+                </Button>
+              </Popconfirm>
+            )}
           </Space>
         ) : (
           <span style={{ color: '#9ca3af' }}>—</span>
-        ),
+        )
+      },
     },
   ]
 
@@ -548,6 +591,47 @@ export default function SubListPage() {
               )}
             </div>
           )}
+        </Form>
+      </Modal>
+
+      {/* 结项确认弹窗 */}
+      <Modal
+        title={`结项确认 — ${closeTarget?.name ?? ''}`}
+        open={!!closeTarget}
+        onCancel={() => setCloseTarget(null)}
+        confirmLoading={closeMutation.isPending}
+        okText="确认结项"
+        cancelText="取消"
+        onOk={() => closeForm.submit()}
+        destroyOnHidden
+      >
+        <Form
+          form={closeForm}
+          layout="vertical"
+          onFinish={(v) =>
+            closeMutation.mutate({ id: closeTarget!.id, remark: v.remark })
+          }
+        >
+          <div
+            style={{
+              background: '#fffbeb',
+              border: '1px solid #fde68a',
+              borderRadius: 4,
+              padding: '8px 12px',
+              marginBottom: 12,
+              fontSize: 13,
+              color: '#92400e',
+            }}
+          >
+            结项需同时满足：① 进度 100%；② 至少 1 份已提交月报；③ 无未关闭预警；
+            ④ 由本学院负责人确认。结项后子项目只读，不再要求报表与预警。
+            <div style={{ marginTop: 4 }}>
+              当前进度：<b>{closeTarget?.current_progress ?? 0}%</b>
+            </div>
+          </div>
+          <Form.Item name="remark" label="结项说明（选填）">
+            <Input.TextArea rows={3} maxLength={500} placeholder="例如：设备已验收，材料齐全" />
+          </Form.Item>
         </Form>
       </Modal>
     </div>

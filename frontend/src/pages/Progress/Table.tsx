@@ -28,6 +28,7 @@ import SubTrendDrawer from '@/components/SubTrendDrawer'
 import { DeviationText, ProgressCell, SubStatusTag } from '@/components/Tags'
 import { exportApi, progressApi, subApi } from '@/api'
 import { SUB_STATUS_LABEL, fmtDate, fmtDateTime } from '@/lib/constants'
+import { errorText } from '@/lib/http'
 import { useDictStore } from '@/stores/dict'
 import { useCan } from '@/stores/auth'
 import type { ProgressRow } from '@/types'
@@ -196,8 +197,9 @@ export default function ProgressTablePage() {
       message.success(`已催办 ${res.owner_name ?? '负责人'}（${via}）`)
     },
     onError: (e: unknown) => {
-      const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      message.warning(msg || '催办失败')
+      // 用 errorText 取：拦截器抛的是 HttpError，原来写 e.response.data.detail
+      // 永远取不到，导致「24 小时内已催办过」被「催办失败」覆盖
+      message.warning(errorText(e, '催办失败'))
     },
     onSettled: () => setUrgeTarget(null),
   })

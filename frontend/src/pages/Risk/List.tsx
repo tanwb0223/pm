@@ -5,6 +5,7 @@ import {
   Button,
   Checkbox,
   DatePicker,
+  Drawer,
   Form,
   Input,
   Modal,
@@ -19,6 +20,7 @@ import {
 import { PlusOutlined } from '@ant-design/icons'
 import dayjs, { type Dayjs } from 'dayjs'
 
+import AttachmentPanel from '@/components/AttachmentPanel'
 import DataTable from '@/components/DataTable'
 import PageHeader from '@/components/PageHeader'
 import { RiskLevelTag } from '@/components/Tags'
@@ -121,6 +123,9 @@ export default function RiskListPage() {
     },
   })
 
+  // 风险材料附件（后端一直支持 biz_type=RISK，前端此前没有入口）
+  const [attachRisk, setAttachRisk] = useState<RiskItem | null>(null)
+
   const openCreate = () => {
     setEditing(null)
     setFormMajorId(null)
@@ -211,33 +216,37 @@ export default function RiskListPage() {
       {
         title: '操作',
         key: 'act',
-        width: 160,
-        render: (_: unknown, r: RiskItem) =>
-          can('risk:edit') ? (
-            <Space size={4}>
-              <Button type="link" size="small" onClick={() => openEdit(r)}>
-                编辑
-              </Button>
-              {r.status === 'OPEN' && (
-                <Popconfirm
-                  title="确认闭环该风险？"
-                  description="闭环后自动记录实际闭环日期"
-                  onConfirm={() => closeMut.mutate(r.id)}
-                >
-                  <Button type="link" size="small">
-                    闭环
+        width: 200,
+        render: (_: unknown, r: RiskItem) => (
+          <Space size={4}>
+            {can('risk:edit') ? (
+              <>
+                <Button type="link" size="small" onClick={() => openEdit(r)}>
+                  编辑
+                </Button>
+                {r.status === 'OPEN' && (
+                  <Popconfirm
+                    title="确认闭环该风险？"
+                    description="闭环后自动记录实际闭环日期"
+                    onConfirm={() => closeMut.mutate(r.id)}
+                  >
+                    <Button type="link" size="small">
+                      闭环
+                    </Button>
+                  </Popconfirm>
+                )}
+                <Popconfirm title="确认删除该风险记录？" onConfirm={() => removeMut.mutate(r.id)}>
+                  <Button type="link" size="small" danger>
+                    删除
                   </Button>
                 </Popconfirm>
-              )}
-              <Popconfirm title="确认删除该风险记录？" onConfirm={() => removeMut.mutate(r.id)}>
-                <Button type="link" size="small" danger>
-                  删除
-                </Button>
-              </Popconfirm>
-            </Space>
-          ) : (
-            '—'
-          ),
+              </>
+            ) : null}
+            <Button type="link" size="small" onClick={() => setAttachRisk(r)}>
+              材料
+            </Button>
+          </Space>
+        ),
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -381,6 +390,22 @@ export default function RiskListPage() {
           </Form.Item>
         </Form>
       </Modal>
+
+      {/* 风险材料附件 */}
+      <Drawer
+        title={`风险材料 — ${attachRisk?.description?.slice(0, 24) ?? ''}`}
+        width={560}
+        open={!!attachRisk}
+        onClose={() => setAttachRisk(null)}
+      >
+        {attachRisk && (
+          <AttachmentPanel
+            bizType="RISK"
+            bizId={attachRisk.id}
+            readOnly={!can('risk:edit')}
+          />
+        )}
+      </Drawer>
     </div>
   )
 }

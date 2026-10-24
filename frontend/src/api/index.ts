@@ -1,8 +1,10 @@
 import { del, download, get, http, post, put } from '@/lib/http'
 import type {
   Alert,
+  AlertActionItem,
   AlertGroup,
   AuthProviderInfo,
+  ChangeLogItem,
   College,
   Completeness,
   LoginResult,
@@ -99,6 +101,12 @@ export const majorApi = {
   removeCollege: (id: number, collegeId: number) =>
     del<void>(`/majors/${id}/colleges/${collegeId}`),
   completeness: (id: number) => get<Completeness>(`/majors/${id}/completeness`),
+  /** 变更留痕（计划/权重/负责人/状态） */
+  changes: (id: number, limit = 50) =>
+    get<ChangeLogItem[]>(`/majors/${id}/changes`, { limit }),
+  /** 结项异议（结项后 7 天内可提出并退回） */
+  objection: (id: number, reason: string) =>
+    post<void>(`/majors/${id}/objection`, { reason }),
 }
 
 // ================================================================ 子项目
@@ -108,6 +116,23 @@ export const subApi = {
   create: (data: Partial<Sub>) => post<{ id: number }>('/subs', data),
   update: (id: number, data: Partial<Sub>) => put<void>(`/subs/${id}`, data),
   remove: (id: number) => del<void>(`/subs/${id}`),
+  /** 结项确认（需 project:sub:close；校验进度 100% + 材料 + 无未关闭预警） */
+  close: (id: number, remark?: string) =>
+    post<{ id: number; status: string }>(`/subs/${id}/close`, { remark }),
+  /** 催办记录（谁在什么时候催了几次） */
+  urges: (id: number) =>
+    get<
+      {
+        id: number
+        note: string | null
+        operator_id: number
+        operator_name: string | null
+        created_at: string
+      }[]
+    >(`/subs/${id}/urges`),
+  /** 变更留痕（计划/权重/负责人/状态） */
+  changes: (id: number, limit = 50) =>
+    get<ChangeLogItem[]>(`/subs/${id}/changes`, { limit }),
   updateProgress: (
     id: number,
     data: { progress: number; note?: string; no_change?: boolean; rollback_reason?: string },
@@ -197,6 +222,27 @@ export const progressApi = {
       channels: string[]
       message: string
     }>(`/subs/${subId}/urge`, { message }),
+  /** 催办统计（按子项目聚合，近 N 天） */
+  urgeStats: (days = 30) =>
+    get<{ sub_id: number; sub_name: string; count: number; last_at: string }[]>(
+      '/progress/urge-stats',
+      { days },
+    ),
+  /** 进度更新及时率（每 14 天至少更新 1 次，需求 4.3 口径） */
+  updateTimeliness: (params: { start: string; end: string }) =>
+    get<{
+      rate: number | null
+      should_update: number
+      updated: number
+      detail: {
+        sub_id: number
+        sub_name: string
+        major_id: number
+        college_id: number
+        last_update_at: string | null
+        updated: boolean
+      }[]
+    }>('/progress/update-timeliness', params),
 }
 
 // ================================================================ 预警
@@ -219,14 +265,51 @@ export const alertApi = {
       by_major: { major_id: number; major_name: string; total: number; red: number }[]
       age_buckets: Record<string, number>
     }>('/alerts/stats', { days }),
-  detail: (id: number) => get<Alert & { actions: unknown[] }>(`/alerts/${id}`),
+  detail: (id: number) =>
+    get<
+      Alert & {
+        detail: Record<string, unknown> | null
+        actions: {
+          id: number
+          action: string
+          operator_id: number | null
+          operator_name: string | null
+          reason: string | null
+          created_at: string
+        }[]
+      }
+    >(`/alerts/${id}`),
   claim: (id: number) => post<void>(`/alerts/${id}/claim`),
+  /** 填写处置措施（已认领状态，需求 3.3(4)） */
+  measure: (id: number, measure: string) =>
+    post<void>(`/alerts/${id}/measure`, { measure }),
   close: (id: number, reason?: string) => post<void>(`/alerts/${id}/close`, { reason }),
   ignore: (id: number, reason: string) => post<void>(`/alerts/${id}/ignore`, { reason }),
   transfer: (id: number, to_user_id: number) =>
     post<void>(`/alerts/${id}/transfer`, { to_user_id }),
   scan: () => post<{ created: number; merged: number }>('/alerts/scan', {}),
-  todo: () => get<TodoData>('/dashboard/todo'),}
+  todo: () => get<TodoData>('/dashboard/todo'),
+}
+
+// ================================================================ 站内消息
+export interface MessageItem {
+  id: number
+  biz_type: string
+  biz_id: number | null
+  level: string | null
+  title: string
+  body: string
+  read_at: string | null
+  created_at: string
+}
+
+export const messageApi = {
+  list: (params: { unread_only?: boolean; page?: number; page_size?: number }) =>
+    get<PageData<MessageItem>>('/messages', params),
+  unreadCount: () => get<{ count: number }>('/messages/unread-count'),
+  read: (id: number) => post<void>(`/messages/${id}/read`),
+  readAll: () => post<{ updated: number }>('/messages/read-all'),
+}
 
 // ================================================================ 报表
 export const reportApi = {
@@ -238,6 +321,8 @@ export const reportApi = {
     period_start?: string
     progress?: number
     content: Record<string, unknown>
+    /** 代填：替哪个子项目负责人交的（本人不是负责人时才需要传） */
+    on_behalf_of?: number | null
   }) => post<{ id: number; status: string }>('/reports', data),
   void: (id: number, reason: string) => post<void>(`/reports/${id}/void`, { reason }),
   weeklyDraft: (sub_id: number, week_start?: string) =>
@@ -246,8 +331,8 @@ export const reportApi = {
       { sub_id, week_start },
     ),
   pending: () => get<PendingReport[]>('/reports/pending'),
-  /** 补填放行记录 */
-  graces: (subId?: number) =>
+  /** 补填/更正放行记录 */
+  graces: (params?: { subId?: number; kind?: 'BACKFILL' | 'CORRECT' }) =>
     get<
       {
         id: number
@@ -255,33 +340,48 @@ export const reportApi = {
         sub_name: string
         type: string
         type_label: string
+        kind: 'BACKFILL' | 'CORRECT'
         period_start: string | null
         reason: string
         granted_by: number
         granted_by_name: string | null
         granted_at: string
         expires_on: string
+        revoked_at: string | null
         is_active: boolean
       }[]
-    >('/reports/graces', subId ? { sub_id: subId } : undefined),
-  /** 开启逾期补填（需 report:grant） */
+    >('/reports/graces', {
+      sub_id: params?.subId,
+      kind: params?.kind,
+    }),
+  /** 开启补填/更正放行（需 report:grant） */
   grantGrace: (data: {
     sub_id: number
     type: string
+    kind?: 'BACKFILL' | 'CORRECT'
     period_start?: string | null
     reason: string
     days?: number
   }) => post<{ id: number; expires_on: string }>('/reports/graces', data),
-  /** 撤销补填放行 */
+  /** 撤销补填/更正放行 */
   revokeGrace: (id: number) => del<void>(`/reports/graces/${id}`),
-  /** 填报选项：当前启用的报表类型（日报受 report.daily.enabled 开关控制） */
-  options: () => get<{ types: string[]; daily_enabled: boolean }>('/reports/options'),
+  /** 该报表当前是否可更正（前端据此决定「更正」按钮显隐） */
+  correctable: (id: number) =>
+    get<{ can_correct: boolean; reason: string; correct_days: number; days_left: number }>(
+      `/reports/${id}/correctable`,
+    ),
+  /** 填报选项：当前启用的报表类型（日报受全局开关 + 项目级覆盖控制） */
+  options: () =>
+    get<{ types: string[]; daily_enabled: boolean; daily_enabled_major_ids: number[] }>(
+      '/reports/options',
+    ),
   timeliness: (params: { start: string; end: string; type?: string; major_id?: number }) =>
     get<{
       should_submit: number
       on_time: number
       late: number
       missing: number
+      voided: number
       rate: number | null
     }>('/reports/timeliness', params),
   timelinessDetail: (params: {
@@ -324,6 +424,27 @@ export const systemApi = {
   updateUser: (id: number, data: Record<string, unknown>) =>
     put<void>(`/system/users/${id}`, data),
   disableUser: (id: number) => del<void>(`/system/users/${id}`),
+  /** 管理员手动解锁被登录限流锁定的账号 */
+  unlockUser: (id: number) => post<{ unlocked: boolean }>(`/system/users/${id}/unlock`),
+  /** 定时任务运行记录（管理员运维视角） */
+  jobs: (limit = 50) =>
+    get<
+      {
+        id: number
+        job_id: string
+        started_at: string
+        finished_at: string | null
+        status: string
+        message: string | null
+      }[]
+    >('/system/jobs', { limit }),
+  /** 备份文件列表 */
+  backups: () =>
+    get<{ name: string; size_mb: number; created_at: string; path: string }[]>(
+      '/system/backups',
+    ),
+  /** 手动触发一次备份 */
+  runBackup: () => post<{ name: string; size_mb: number }>('/system/backups/run'),
   roles: () =>
     get<{ id: number; code: string; name: string; is_system: boolean; permission_count: number }[]>(
       '/system/roles',

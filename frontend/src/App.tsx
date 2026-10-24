@@ -5,6 +5,7 @@ import AppLayout from '@/layouts/AppLayout'
 import LoginPage from '@/pages/Login'
 import OidcCallback from '@/pages/Login/OidcCallback'
 import DashboardPage from '@/pages/Dashboard'
+import MessagePage from '@/pages/Message'
 import MajorListPage from '@/pages/Project/MajorList'
 import MajorDetailPage from '@/pages/Project/MajorDetail'
 import SubListPage from '@/pages/Project/SubList'
@@ -98,6 +99,8 @@ export default function App() {
       >
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<DashboardPage />} />
+        {/* 站内消息：任何登录用户都能看自己的消息，不需要额外权限码 */}
+        <Route path="messages" element={<MessagePage />} />
 
         <Route
           path="project/majors"

@@ -122,6 +122,10 @@ export default function DataTable<T extends object>({
       <Table<T>
         {...rest}
         columns={columns}
+        // 展开行（进度留痕/附件材料）与勾选列：522124e 把它们从 rest 里解构出来
+        // 想显式传，但渲染时漏传，导致 expandable/rowSelection 被静默吞掉。
+        expandable={expandable}
+        rowSelection={rowSelection}
         // 密度档位：default 用默认档字号/内边距，compact 走小尺寸档
         size={density === 'compact' ? 'small' : 'large'}
         scroll={mergedScroll}

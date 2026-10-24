@@ -11,6 +11,7 @@ import {
   Space,
   Table,
   Tag,
+  Tooltip,
   App,
 } from 'antd'
 import { PlusOutlined, SearchOutlined, UploadOutlined } from '@ant-design/icons'
@@ -104,6 +105,24 @@ function UserPageInner() {
     },
   })
 
+  // 启用：误停用后原来只能改库恢复
+  const enableMut = useMutation({
+    mutationFn: (id: number) => systemApi.updateUser(id, { status: 'ACTIVE' }),
+    onSuccess: () => {
+      message.success('已启用')
+      invalidate()
+    },
+  })
+
+  // 解锁：登录限流锁定后管理员可提前解锁（落库后才有意义）
+  const unlockMut = useMutation({
+    mutationFn: (id: number) => systemApi.unlockUser(id),
+    onSuccess: () => {
+      message.success('已解锁，该账号可以重新登录')
+      invalidate()
+    },
+  })
+
   const columns: ColumnsType<UserItem> = useMemo(
     () => [
       { title: '工号', dataIndex: 'staff_no', width: 120 },
@@ -132,9 +151,9 @@ function UserPageInner() {
       {
         title: '操作',
         key: 'op',
-        width: 140,
+        width: 190,
         render: (_, record) => (
-          <Space>
+          <Space size={4}>
             <Button type="link" size="small" onClick={() => openEdit(record)}>
               编辑
             </Button>
@@ -149,12 +168,34 @@ function UserPageInner() {
                 </Button>
               </Popconfirm>
             )}
+            {can('system:user') && record.status !== 'ACTIVE' && (
+              <Popconfirm
+                title="确认启用该用户？"
+                onConfirm={() => enableMut.mutate(record.id)}
+              >
+                <Button type="link" size="small">
+                  启用
+                </Button>
+              </Popconfirm>
+            )}
+            {can('system:user') && record.locked_until && (
+              <Tooltip title={`锁定至 ${fmtDateTime(record.locked_until)}`}>
+                <Button
+                  type="link"
+                  size="small"
+                  loading={unlockMut.isPending}
+                  onClick={() => unlockMut.mutate(record.id)}
+                >
+                  解锁
+                </Button>
+              </Tooltip>
+            )}
           </Space>
         ),
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [disableMut],
+    [disableMut, enableMut, unlockMut],
   )
 
   const openEdit = (u: UserItem) => {

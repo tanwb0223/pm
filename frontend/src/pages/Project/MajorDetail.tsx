@@ -1,28 +1,39 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeftOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
+import {
+  ArrowLeftOutlined,
+  ExclamationCircleOutlined,
+  PlusOutlined,
+  ReloadOutlined,
+  RollbackOutlined,
+} from '@ant-design/icons'
 import {
   Alert,
   Button,
   Card,
+  Col,
   Descriptions,
   Form,
   Input,
   message,
   Modal,
   Popconfirm,
+  Row,
   Select,
   Space,
   Spin,
+  Tag,
+  Tooltip,
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 
+import AttachmentPanel from '@/components/AttachmentPanel'
 import PageHeader from '@/components/PageHeader'
 import Table from '@/components/Table'
 import { MajorStatusTag, ProgressCell, SubStatusTag } from '@/components/Tags'
-import { collegeApi, majorApi, subApi, systemApi } from '@/api'
-import { fmtDate } from '@/lib/constants'
+import { alertApi, collegeApi, majorApi, progressApi, subApi, systemApi } from '@/api'
+import { fmtDate, fmtDateTime } from '@/lib/constants'
 import { useCan } from '@/stores/auth'
 import type { College, MajorCollege, Sub, UserItem } from '@/types'
 
@@ -87,6 +98,23 @@ export default function MajorDetailPage() {
     enabled: Number.isFinite(majorId) && majorId > 0,
   })
 
+  // 进度汇总：大项目进度 / 各学院进度 / 全校进度
+  // P1-9：后端 GET /progress/major/{id} 早就算好了，但前端一直没有页面消费，
+  // 校领导和大项目负责人打开详情看不到任何进度数字。
+  const { data: summary } = useQuery({
+    queryKey: ['major-summary', majorId],
+    queryFn: () => progressApi.majorSummary(majorId),
+    enabled: Number.isFinite(majorId) && majorId > 0,
+  })
+
+  // 该大项目名下未关闭的预警数（详情页一屏看到「当前有几条预警」）
+  const { data: majorAlerts } = useQuery({
+    queryKey: ['major-alerts', majorId],
+    queryFn: () =>
+      alertApi.list({ major_id: majorId, status: 'PENDING', page: 1, page_size: 1 }),
+    enabled: Number.isFinite(majorId) && majorId > 0,
+  })
+
   // 学院字典（添加学院弹窗用）
   const { data: allColleges } = useQuery({
     queryKey: ['colleges'],
@@ -141,6 +169,26 @@ export default function MajorDetailPage() {
     },
   })
 
+  // ---------------------------------------------------------------- 学院负责人
+  // P0-3：大项目详情原来只能「添加学院」和「移除」，已添加的学院无法补/换
+  // 负责人；而 AL-09（责任空缺）恰恰不可手工关闭、只能补齐数据自动关闭 ——
+  // 于是漏填一次负责人，那条红色预警就永久关不掉。
+  // 后端 add_major_college 对已存在的学院是「更新负责人」语义，这里复用。
+  const [ownerOpen, setOwnerOpen] = useState<MajorCollege | null>(null)
+  const [ownerForm] = Form.useForm<{ college_owner_id?: number }>()
+  const setOwnerMutation = useMutation({
+    mutationFn: (v: { collegeId: number; ownerId?: number }) =>
+      majorApi.addCollege(majorId, v.collegeId, v.ownerId ?? null),
+    onSuccess: () => {
+      message.success('已设置学院负责人')
+      setOwnerOpen(null)
+      ownerForm.resetFields()
+      void queryClient.invalidateQueries({ queryKey: ['major-colleges', majorId] })
+      void queryClient.invalidateQueries({ queryKey: ['major', majorId] })
+      void queryClient.invalidateQueries({ queryKey: ['alerts'] })
+    },
+  })
+
   // ---------------------------------------------------------------- 列定义
   const collegeColumns: ColumnsType<MajorCollege> = [
     { title: '学院名称', dataIndex: 'college_name' },
@@ -149,22 +197,46 @@ export default function MajorDetailPage() {
       dataIndex: 'college_owner_name',
       render: (v: string | null) => v ?? <span style={{ color: '#ef4444' }}>未指定</span>,
     },
+    {
+      title: '学院进度',
+      key: 'college_progress',
+      width: 110,
+      align: 'center',
+      render: (_, record: MajorCollege) => {
+        const p = summary?.college_progress?.[String(record.college_id)]
+        return p === undefined ? '—' : <b>{p}%</b>
+      },
+    },
     { title: '子项目数', dataIndex: 'sub_count', width: 100, align: 'center' },
     {
       title: '操作',
       key: 'action',
-      width: 90,
+      width: 160,
       render: (_, record: MajorCollege) =>
         canEditCollege ? (
-          <Popconfirm
-            title="确认移除该学院？"
-            description="学院下有子项目时无法移除"
-            onConfirm={() => removeCollegeMutation.mutate(record.college_id)}
-          >
-            <Button type="link" size="small" danger>
-              移除
+          <Space size={0}>
+            <Button
+              type="link"
+              size="small"
+              onClick={() => {
+                setOwnerOpen(record)
+                ownerForm.setFieldsValue({
+                  college_owner_id: record.college_owner_id ?? undefined,
+                })
+              }}
+            >
+              设置负责人
             </Button>
-          </Popconfirm>
+            <Popconfirm
+              title="确认移除该学院？"
+              description="学院下有子项目时无法移除"
+              onConfirm={() => removeCollegeMutation.mutate(record.college_id)}
+            >
+              <Button type="link" size="small" danger>
+                移除
+              </Button>
+            </Popconfirm>
+          </Space>
         ) : (
           <span style={{ color: '#9ca3af' }}>—</span>
         ),
@@ -252,6 +324,44 @@ export default function MajorDetailPage() {
         }
       />
 
+      {/* 进度汇总卡（需求 3.2(3)：子项目 → 学院 → 大项目 → 全校 一层层往上加） */}
+      <Row gutter={16} style={{ marginBottom: 16 }}>
+        <Col xs={12} md={6}>
+          <Card size="small">
+            <div className="metric-label">大项目进度</div>
+            <div className="metric-value" style={{ color: '#2563eb' }}>
+              {summary ? `${summary.major_progress}%` : '—'}
+            </div>
+          </Card>
+        </Col>
+        <Col xs={12} md={6}>
+          <Card size="small">
+            <div className="metric-label">全校进度</div>
+            <div className="metric-value" style={{ color: '#0891b2' }}>
+              {summary ? `${summary.school_progress}%` : '—'}
+            </div>
+            <Tooltip title="各大项目等权平均（一期不按经费折算，见需求 6.3 第 20 项）">
+              <span style={{ fontSize: 12, color: '#9ca3af' }}>等权平均</span>
+            </Tooltip>
+          </Card>
+        </Col>
+        <Col xs={12} md={6}>
+          <Card size="small">
+            <div className="metric-label">计入汇总子项目</div>
+            <div className="metric-value">{summary?.counted_subs ?? '—'}</div>
+            <span style={{ fontSize: 12, color: '#9ca3af' }}>不含未开始/已中止</span>
+          </Card>
+        </Col>
+        <Col xs={12} md={6}>
+          <Card size="small">
+            <div className="metric-label">待处置预警</div>
+            <div className="metric-value" style={{ color: '#ef4444' }}>
+              {majorAlerts ? majorAlerts.total : '—'}
+            </div>
+          </Card>
+        </Col>
+      </Row>
+
       {/* 基本信息 */}
       <Card style={{ marginBottom: 16 }}>
         <Descriptions column={2} size="small">
@@ -326,7 +436,7 @@ export default function MajorDetailPage() {
       </Card>
 
       {/* 子项目 */}
-      <Card title={`子项目（${subs?.total ?? 0}）`}>
+      <Card title={`子项目（${subs?.total ?? 0}）`} style={{ marginBottom: 16 }}>
         <Table<Sub>
           rowKey="id"
           density="compact"
@@ -336,10 +446,51 @@ export default function MajorDetailPage() {
           pagination={false}
           onRow={(record) => ({
             style: { cursor: 'pointer' },
-            onClick: () => navigate('/progress/table'),
+            // 带上大项目筛选跳转，避免落到全量进度总表里让人自己翻
+            onClick: () => navigate(`/progress/table?major_id=${majorId}`),
           })}
         />
       </Card>
+
+      {/* 项目档案材料（需求 3.1：协议、方案、照片等不属于任何报表的材料）
+          后端一直支持 biz_type=MAJOR，但前端此前只有子项目附件入口。 */}
+      <Card title="项目档案材料" style={{ marginBottom: 16 }}>
+        <AttachmentPanel
+          bizType="MAJOR"
+          bizId={majorId}
+          readOnly={!can('project:major:edit') && !can('progress:update')}
+        />
+      </Card>
+
+      {/* 设置学院负责人 */}
+      <Modal
+        title={`设置学院负责人 — ${ownerOpen?.college_name ?? ''}`}
+        open={!!ownerOpen}
+        onCancel={() => setOwnerOpen(null)}
+        confirmLoading={setOwnerMutation.isPending}
+        onOk={() => ownerForm.submit()}
+        destroyOnHidden
+      >
+        <Form
+          form={ownerForm}
+          layout="vertical"
+          onFinish={(v) =>
+            setOwnerMutation.mutate({
+              collegeId: ownerOpen!.college_id,
+              ownerId: v.college_owner_id,
+            })
+          }
+        >
+          <Form.Item name="college_owner_id" label="负责人">
+            {ownerOpen ? <CollegeOwnerSelect collegeId={ownerOpen.college_id} /> : null}
+          </Form.Item>
+          <Alert
+            type="info"
+            showIcon
+            message="AL-09（责任空缺）预警只能通过补齐负责人自动关闭"
+          />
+        </Form>
+      </Modal>
 
       {/* 添加学院弹窗 */}
       <Modal

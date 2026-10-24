@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Alert, Button, Divider, Form, Input, Space, Typography } from 'antd'
+import { Alert, Button, Divider, Form, Input, Segmented, Space, Typography } from 'antd'
 import { LockOutlined, ThunderboltFilled, UserOutlined } from '@ant-design/icons'
 
 import { authApi } from '@/api'
@@ -48,11 +48,21 @@ export default function LoginPage() {
   })
 
   const redirectProviders = (providers ?? []).filter((p) => p.flow === 'redirect')
+  // LDAP / AD 域账号（flow='post'）需要独立表单：
+  // 早期登录页只渲染 redirect 类型，后端支持 LDAP 但用户完全用不了。
+  const ldapProvider = (providers ?? []).find((p) => p.kind === 'ldap' && p.flow === 'post')
+  // 本地密码登录是否启用（管理员可在「认证方式」里关掉，例如强制全校走 SSO）
+  const passwordProvider = (providers ?? []).find((p) => p.kind === 'password')
+  const passwordEnabled = passwordProvider ? passwordProvider.enabled !== false : true
+  const [loginMode, setLoginMode] = useState<'password' | 'ldap'>('password')
 
   const handlePasswordLogin = async (values: LoginForm) => {
     setSubmitting(true)
     try {
-      const result = await authApi.login(values.username.trim(), values.password)
+      const result =
+        loginMode === 'ldap'
+          ? await authApi.loginLdap(values.username.trim(), values.password)
+          : await authApi.login(values.username.trim(), values.password)
       // 换账号：先清掉上一个账号的全部查询缓存，再写新 token
       clearQueryCache()
       setToken(result.access_token)
@@ -97,31 +107,58 @@ export default function LoginPage() {
           />
         )}
 
-        <Form form={form} layout="vertical" onFinish={handlePasswordLogin} size="large">
-          <Form.Item
-            name="username"
-            rules={[{ required: true, message: '请输入工号' }]}
-          >
-            <Input prefix={<UserOutlined />} placeholder="工号" autoComplete="username" />
-          </Form.Item>
+        {(ldapProvider || !passwordEnabled) && (
+          <Segmented
+            block
+            style={{ marginBottom: 16 }}
+            value={loginMode}
+            onChange={(v) => setLoginMode(v as 'password' | 'ldap')}
+            options={[
+              ...(passwordEnabled ? [{ value: 'password', label: '账号密码' }] : []),
+              ...(ldapProvider ? [{ value: 'ldap', label: '域账号登录' }] : []),
+            ]}
+          />
+        )}
 
-          <Form.Item
-            name="password"
-            rules={[{ required: true, message: '请输入密码' }]}
-          >
-            <Input.Password
-              prefix={<LockOutlined />}
-              placeholder="密码"
-              autoComplete="current-password"
-            />
-          </Form.Item>
+        {passwordEnabled || loginMode === 'ldap' ? (
+          <Form form={form} layout="vertical" onFinish={handlePasswordLogin} size="large">
+            <Form.Item
+              name="username"
+              rules={[{ required: true, message: loginMode === 'ldap' ? '请输入域账号' : '请输入工号' }]}
+            >
+              <Input
+                prefix={<UserOutlined />}
+                placeholder={loginMode === 'ldap' ? '域账号（如 zhangsan）' : '工号'}
+                autoComplete="username"
+              />
+            </Form.Item>
 
-          <Form.Item style={{ marginBottom: 8 }}>
-            <Button type="primary" htmlType="submit" block loading={submitting}>
-              登录
-            </Button>
-          </Form.Item>
-        </Form>
+            <Form.Item
+              name="password"
+              rules={[{ required: true, message: '请输入密码' }]}
+            >
+              <Input.Password
+                prefix={<LockOutlined />}
+                placeholder="密码"
+                autoComplete="current-password"
+              />
+            </Form.Item>
+
+            <Form.Item style={{ marginBottom: 8 }}>
+              <Button type="primary" htmlType="submit" block loading={submitting}>
+                {loginMode === 'ldap' ? '域账号登录' : '登录'}
+              </Button>
+            </Form.Item>
+          </Form>
+        ) : (
+          <Alert
+            type="info"
+            showIcon
+            message="本地账号密码登录已关闭"
+            description="请使用下方统一身份认证方式登录"
+            style={{ marginBottom: 16 }}
+          />
+        )}
 
         {redirectProviders.length > 0 && (
           <>

@@ -27,6 +27,20 @@ export interface AuthProviderInfo {
   display_name: string
   flow: 'password' | 'redirect' | 'post'
   callback_path: string
+  enabled?: boolean
+}
+
+/** 项目变更留痕（计划/权重/负责人/状态） */
+export interface ChangeLogItem {
+  id: number
+  field: string
+  field_label?: string
+  old_value: string | null
+  new_value: string | null
+  reason: string | null
+  operator_id: number | null
+  operator_name: string | null
+  created_at: string
 }
 
 export interface MeInfo {
@@ -62,6 +76,9 @@ export interface UserItem {
   email: string | null
   status: string
   last_login_at: string | null
+  /** 登录失败累计次数与锁定截止时间（限流已落库，管理员可解锁） */
+  failed_login_count?: number
+  locked_until?: string | null
   has_password: boolean
 }
 
@@ -89,6 +106,11 @@ export interface Major {
   budget_total: number | null
   budget_used: number | null
   acceptance_status: string
+  /** 日报开关：null=跟随全局，true/false=本项目单独指定（需求 6.1 第 5 项） */
+  daily_report_enabled?: boolean | null
+  /** 结项异议（需求 6.3 第 27 项） */
+  close_objection_at?: string | null
+  close_objection_reason?: string | null
   college_count: number
   sub_count: number
   incomplete_reason: { complete: boolean; items: IncompleteItem[] } | null
@@ -175,9 +197,21 @@ export interface Alert {
   claimed_at: string | null
   closed_at: string | null
   close_reason: string | null
+  /** 触发详情：规则算出的连续天数/阈值/风险描述等（早期不落库，现已补） */
+  detail?: Record<string, unknown> | null
   escalated_at: string | null
   merged_count: number
   dedup_key: string
+}
+
+/** 预警处置流水 */
+export interface AlertActionItem {
+  id: number
+  action: 'CLAIM' | 'TRANSFER' | 'CLOSE' | 'IGNORE' | 'ESCALATE' | 'MEASURE'
+  operator_id: number | null
+  operator_name: string | null
+  reason: string | null
+  created_at: string
 }
 
 export interface AlertGroup {
@@ -225,6 +259,8 @@ export interface ReportItem {
   status: 'DRAFT' | 'SUBMITTED' | 'VOIDED'
   submitted_at: string | null
   submitted_by: number | null
+  /** 代填：替谁交的（为空表示本人提交） */
+  on_behalf_of: number | null
   correct_count: number
   void_reason: string | null
   voided_at: string | null

@@ -19,6 +19,7 @@ import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   NotificationOutlined,
+  BellOutlined,
   ProjectOutlined,
   SafetyOutlined,
   SettingOutlined,
@@ -26,9 +27,9 @@ import {
   ThunderboltFilled,
   WarningOutlined,
 } from '@ant-design/icons'
-import { Avatar, Badge, Button, Dropdown, Layout, Menu, Space, Tag, Typography } from 'antd'
+import { Avatar, Badge, Button, Dropdown, Layout, Menu, Space, Tag, Tooltip, Typography } from 'antd'
 
-import { alertApi, authApi, collegeApi, majorApi } from '@/api'
+import { alertApi, authApi, collegeApi, majorApi, messageApi } from '@/api'
 import ChangePasswordModal from '@/components/ChangePasswordModal'
 import BindAccountModal from '@/components/BindAccountModal'
 import { useAuthStore, useCan, useCanAny } from '@/stores/auth'
@@ -97,6 +98,15 @@ export default function AppLayout() {
   const { data: todo } = useQuery({
     queryKey: ['todo'],
     queryFn: alertApi.todo,
+    refetchInterval: 60 * 1000,
+  })
+
+  // 站内消息未读数（顶栏铃铛红点）
+  // 早期 INNER 通知只写 notify_log 就记 SUCCESS，收件人根本读不到；
+  // 现在后端会落 sys_message，这里轮询未读数。
+  const { data: unread } = useQuery({
+    queryKey: ['messages-unread'],
+    queryFn: messageApi.unreadCount,
     refetchInterval: 60 * 1000,
   })
 
@@ -284,6 +294,14 @@ export default function AppLayout() {
               </Tag>
             </Link>
           )}
+          {/* 站内消息入口：被催办/被预警的人在这里能看到消息 */}
+          <Tooltip title="我的消息">
+            <Link to="/messages">
+              <Badge count={unread?.count ?? 0} size="small" offset={[-2, 2]}>
+                <Button type="text" icon={<BellOutlined />} style={{ color: '#4b5563' }} />
+              </Badge>
+            </Link>
+          </Tooltip>
           <Dropdown
             menu={{
               items: [

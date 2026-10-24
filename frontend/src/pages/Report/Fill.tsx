@@ -6,15 +6,18 @@ import {
   Button,
   Card,
   Collapse,
+  Drawer,
   Form,
   Input,
   InputNumber,
   Modal,
+  Popconfirm,
   Radio,
   Result,
   Select,
   Space,
   Switch,
+  Table,
   Tag,
   Tooltip,
 } from 'antd'
@@ -24,7 +27,7 @@ import DataTable from '@/components/DataTable'
 import PageHeader from '@/components/PageHeader'
 import { reportApi, subApi } from '@/api'
 import { useCan } from '@/stores/auth'
-import { fmtDateTime } from '@/lib/constants'
+import { fmtDate, fmtDateTime } from '@/lib/constants'
 import type { PendingReport } from '@/types'
 import { PAGE_SIZE, tablePagination } from '@/lib/pagination'
 
@@ -228,21 +231,53 @@ function ReportFillPageInner() {
     mutationFn: (v: {
       sub_id: number
       type: string
+      kind?: 'BACKFILL' | 'CORRECT'
       period_start?: string | null
       reason: string
       days: number
     }) => reportApi.grantGrace(v),
     onSuccess: (r) => {
-      message.success(`已开启补填，有效期至 ${r.expires_on}`)
+      message.success(`已开启放行，有效期至 ${r.expires_on}`)
       setGraceOpen(false)
       graceForm.resetFields()
       void queryClient.invalidateQueries({ queryKey: ['report-graces'] })
     },
-    onError: (e: unknown) => {
-      const d = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      message.error(d || '开启失败')
+  })
+
+  // ---------------------------------------------------------------- 放行记录
+  // P1：「开启补填」原来只能开、看不到、撤不回（后端 graces / revokeGrace
+  // 早就有了，但前端零调用）。这里给一个台账抽屉 + 撤销。
+  const [gracesOpen, setGracesOpen] = useState(false)
+  const { data: graces, isLoading: gracesLoading } = useQuery({
+    queryKey: ['report-graces'],
+    queryFn: () => reportApi.graces(),
+  })
+  const pendingGracesLoaded = graces !== undefined
+  const revokeMut = useMutation({
+    mutationFn: (id: number) => reportApi.revokeGrace(id),
+    onSuccess: () => {
+      message.success('已撤销放行')
+      void queryClient.invalidateQueries({ queryKey: ['report-graces'] })
     },
   })
+
+  /** 该期是否已放行（待填清单按钮据此提示） */
+  const activeGraceKeys = useMemo(() => {
+    const s = new Set<string>()
+    for (const g of graces ?? []) {
+      if (!g.is_active || g.kind !== 'BACKFILL') continue
+      if (g.period_start) {
+        s.add(`${g.sub_id}|${g.type}|${g.period_start}`)
+      } else {
+        // 留空周期 = 该类型所有历史周期
+        s.add(`${g.sub_id}|${g.type}|*`)
+      }
+    }
+    return s
+  }, [graces])
+  const hasGrace = (r: PendingReport) =>
+    activeGraceKeys.has(`${r.sub_id}|${r.type}|${r.period_start}`) ||
+    activeGraceKeys.has(`${r.sub_id}|${r.type}|*`)
 
   const handleSubmit = async () => {
     const values = await form.validateFields()
@@ -264,7 +299,8 @@ function ReportFillPageInner() {
       sub_id: values.sub_id,
       type: rtype,
       period_start: picked?.period_start,
-      progress: values.sync_progress ? values.progress : undefined,
+      // 月报必须带进度（需求 3.4 表 11：月报「进度更新为必填项」）
+      progress: rtype === 'MONTHLY' || values.sync_progress ? values.progress : undefined,
       content,
     })
   }
@@ -312,16 +348,32 @@ function ReportFillPageInner() {
     {
       title: '操作',
       key: 'act',
-      width: 100,
-      render: (_: unknown, r: PendingReport) => (
-        <Button
-          type="link"
-          size="small"
-          onClick={() => pickPending(r)}
-        >
-          {r.status === 'OVERDUE' ? '补填' : '填报'}
-        </Button>
-      ),
+      width: 130,
+      render: (_: unknown, r: PendingReport) => {
+        // 逾期且未放行的周期，后端会以「已超过补填期」拒绝提交；
+        // 这里提前拦住，避免教师填完一整张表单才发现要找人开权限。
+        const needGrace = r.status === 'OVERDUE' && pendingGracesLoaded && !hasGrace(r)
+        if (needGrace) {
+          return (
+            <Tooltip title="本期已超过补填期，需学院负责人开启补填（或更正）放行后才能提交">
+              <Button
+                type="link"
+                size="small"
+                onClick={() =>
+                  canGrant ? openGrace(r) : message.warning('请联系学院负责人开启补填放行')
+                }
+              >
+                需先开补填
+              </Button>
+            </Tooltip>
+          )
+        }
+        return (
+          <Button type="link" size="small" onClick={() => pickPending(r)}>
+            {r.status === 'OVERDUE' ? '补填' : '填报'}
+          </Button>
+        )
+      },
     },
   ]
 
@@ -366,9 +418,14 @@ function ReportFillPageInner() {
                   <Switch size="small" checked={onlyOverdue} onChange={setOnlyOverdue} />
                 </Space>
                 {canGrant && (
-                  <Button size="small" onClick={() => openGrace()}>
-                    开启补填
-                  </Button>
+                  <Space size={8}>
+                    <Button size="small" onClick={() => openGrace()}>
+                      开启补填
+                    </Button>
+                    <Button size="small" onClick={() => setGracesOpen(true)}>
+                      放行记录
+                    </Button>
+                  </Space>
                 )}
               </Space>
             }
@@ -531,17 +588,22 @@ function ReportFillPageInner() {
             items={[
               {
                 key: 'progress',
-                label: '同步更新进度（可选）',
+                label:
+                  type === 'MONTHLY'
+                    ? '更新进度（月报必填）'
+                    : '同步更新进度（可选）',
                 children: (
                   <Space align="center" wrap>
                     <Form.Item name="sync_progress" valuePropName="checked" noStyle>
                       <Switch
+                        // 需求 3.4：月报「进度更新为必填项」，这里默认打开且不可关闭
+                        disabled={type === 'MONTHLY'}
                         checkedChildren="同步"
                         unCheckedChildren="不同步"
                         onChange={(v) => setSyncProgress(v as boolean)}
                       />
                     </Form.Item>
-                    {syncProgress && (
+                    {(syncProgress || type === 'MONTHLY') && (
                       <Form.Item
                         name="progress"
                         label="最新进度（%）"
@@ -602,6 +664,19 @@ function ReportFillPageInner() {
             />
           </Form.Item>
           <Form.Item
+            label="放行类型"
+            name="kind"
+            initialValue="BACKFILL"
+            extra="补填＝允许补交未提交的周期；更正＝允许修改已提交的报表（需求 3.4）"
+          >
+            <Radio.Group
+              options={[
+                { value: 'BACKFILL', label: '补填（逾期补交）' },
+                { value: 'CORRECT', label: '更正（修改已提交）' },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item
             label="周期起始日"
             name="period_start"
             extra="留空表示该类型的所有历史周期都可补填"
@@ -624,6 +699,83 @@ function ReportFillPageInner() {
           </Form.Item>
         </Form>
       </Modal>
+
+      {/* 放行记录台账：能看到谁在什么时候给谁开了多久，也能撤销 */}
+      <Drawer
+        title="补填 / 更正放行记录"
+        width={760}
+        open={gracesOpen}
+        onClose={() => setGracesOpen(false)}
+      >
+        <Table
+          rowKey="id"
+          loading={gracesLoading}
+          dataSource={graces ?? []}
+          pagination={false}
+          locale={{ emptyText: '暂无放行记录' }}
+          columns={[
+            { title: '子项目', dataIndex: 'sub_name', ellipsis: true },
+            {
+              title: '类型',
+              dataIndex: 'type',
+              width: 90,
+              render: (v: string) => TYPE_LABEL[v as ReportType] ?? v,
+            },
+            {
+              title: '放行',
+              dataIndex: 'kind',
+              width: 90,
+              render: (v: string) => (
+                <Tag color={v === 'CORRECT' ? 'purple' : 'blue'}>
+                  {v === 'CORRECT' ? '更正' : '补填'}
+                </Tag>
+              ),
+            },
+            {
+              title: '周期',
+              dataIndex: 'period_start',
+              width: 120,
+              render: (v: string | null) => (v ? fmtDate(v) : '全部历史'),
+            },
+            { title: '理由', dataIndex: 'reason', ellipsis: true },
+            { title: '开启人', dataIndex: 'granted_by_name', width: 100 },
+            {
+              title: '有效期至',
+              dataIndex: 'expires_on',
+              width: 120,
+              render: (v: string, r) => (
+                <Space size={4}>
+                  {fmtDate(v)}
+                  {r.revoked_at ? (
+                    <Tag>已撤销</Tag>
+                  ) : r.is_active ? (
+                    <Tag color="green">生效中</Tag>
+                  ) : (
+                    <Tag>已过期</Tag>
+                  )}
+                </Space>
+              ),
+            },
+            {
+              title: '操作',
+              width: 80,
+              render: (_, r) =>
+                r.is_active && !r.revoked_at ? (
+                  <Popconfirm
+                    title="确认撤销该放行？"
+                    onConfirm={() => revokeMut.mutate(r.id)}
+                  >
+                    <Button type="link" size="small" danger>
+                      撤销
+                    </Button>
+                  </Popconfirm>
+                ) : (
+                  '—'
+                ),
+            },
+          ]}
+        />
+      </Drawer>
     </div>
   )
 }

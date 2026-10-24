@@ -5,12 +5,16 @@ import {
   Button,
   Card,
   Checkbox,
+  Descriptions,
+  Drawer,
   Form,
   Input,
   Modal,
   Select,
   Space,
+  Spin,
   Tag,
+  Timeline,
   Tooltip,
   message,
 } from 'antd'
@@ -27,6 +31,25 @@ import { useDictStore } from '@/stores/dict'
 import { useCan } from '@/stores/auth'
 import type { Alert, AlertGroup } from '@/types'
 import { tablePagination } from '@/lib/pagination'
+
+/** 处置动作的中文名（时间线展示用） */
+const ACTION_LABEL: Record<string, string> = {
+  CLAIM: '认领',
+  TRANSFER: '转交',
+  CLOSE: '关闭',
+  IGNORE: '忽略',
+  ESCALATE: '超时升级',
+  MEASURE: '填写处置措施',
+}
+
+const ACTION_COLOR: Record<string, string> = {
+  CLAIM: 'blue',
+  TRANSFER: 'purple',
+  CLOSE: 'green',
+  IGNORE: 'gray',
+  ESCALATE: 'red',
+  MEASURE: 'orange',
+}
 
 /** 不可关闭/忽略的预警类型（只能补齐数据自动关闭） */
 const IMMUTABLE_TYPES = new Set(['AL-09', 'AL-10'])
@@ -45,12 +68,14 @@ interface Filters {
   status?: string
   alert_type?: string
   major_id?: number
+  college_id?: number
   only_mine: boolean
 }
 
 export default function AlertCenterPage() {
   const queryClient = useQueryClient()
   const majors = useDictStore((s) => s.majors)
+  const colleges = useDictStore((s) => s.colleges)
   const can = useCan()
 
   // 处置按钮按权限点显示：认领 alert:claim / 关闭与忽略 alert:close / 转交 alert:transfer
@@ -67,6 +92,9 @@ export default function AlertCenterPage() {
   const [closeAlert, setCloseAlert] = useState<Alert | null>(null)
   const [ignoreAlert, setIgnoreAlert] = useState<Alert | null>(null)
   const [transferAlert, setTransferAlert] = useState<Alert | null>(null)
+  // 详情抽屉：展示触发详情 + 处置时间线 + 填写处置措施
+  const [detailId, setDetailId] = useState<number | null>(null)
+  const [measureText, setMeasureText] = useState('')
   const [userOptions, setUserOptions] = useState<PickUser[]>([])
   const [closeForm] = Form.useForm()
   const [ignoreForm] = Form.useForm()
@@ -80,6 +108,7 @@ export default function AlertCenterPage() {
       status: filters.status,
       alert_type: filters.alert_type,
       major_id: filters.major_id,
+      college_id: filters.college_id,
       only_mine: filters.only_mine || undefined,
     }),
     [filters, page],
@@ -93,6 +122,23 @@ export default function AlertCenterPage() {
 
   const { data: grouped } = useQuery({ queryKey: ['alerts-grouped'], queryFn: alertApi.grouped })
 
+  // 详情：预警信息 + 触发详情 + 处置时间线
+  const { data: detail, isFetching: detailLoading } = useQuery({
+    queryKey: ['alert-detail', detailId],
+    queryFn: () => alertApi.detail(detailId as number),
+    enabled: detailId !== null,
+  })
+
+  const measureMutation = useMutation({
+    mutationFn: ({ id, text }: { id: number; text: string }) => alertApi.measure(id, text),
+    onSuccess: () => {
+      message.success('处置措施已记录')
+      setMeasureText('')
+      queryClient.invalidateQueries({ queryKey: ['alert-detail', detailId] })
+      invalidate()
+    },
+  })
+
   const patchFilters = (patch: Partial<Filters>) => {
     setFilters((f) => ({ ...f, ...patch }))
     setPage(1)
@@ -102,7 +148,11 @@ export default function AlertCenterPage() {
     queryClient.invalidateQueries({ queryKey: ['alerts'] })
     queryClient.invalidateQueries({ queryKey: ['alerts-grouped'] })
     queryClient.invalidateQueries({ queryKey: ['alerts-stats'] })
+    // 待办角标与「我的督办」卡片用的是两个不同的 key（历史上不统一），
+    // 这里两个都失效，避免处理完预警后看板数字不刷新。
     queryClient.invalidateQueries({ queryKey: ['todo'] })
+    queryClient.invalidateQueries({ queryKey: ['dashboard-todo'] })
+    queryClient.invalidateQueries({ queryKey: ['messages-unread'] })
   }
 
   const scanMutation = useMutation({
@@ -223,44 +273,53 @@ export default function AlertCenterPage() {
             )}
             {r.status === 'CLAIMED' && (
               <>
-                <Tooltip title={immutable ? '补齐数据后自动关闭' : ''}>
+                {canClose && (
+                  <Tooltip title={immutable ? '补齐数据后自动关闭' : ''}>
+                    <Button
+                      type="link"
+                      size="small"
+                      disabled={immutable}
+                      onClick={() => {
+                        setCloseAlert(r)
+                        closeForm.resetFields()
+                      }}
+                    >
+                      关闭
+                    </Button>
+                  </Tooltip>
+                )}
+                {canClose && (
+                  <Tooltip title={immutable ? '不能忽略' : ''}>
+                    <Button
+                      type="link"
+                      size="small"
+                      disabled={immutable}
+                      onClick={() => {
+                        setIgnoreAlert(r)
+                        ignoreForm.resetFields()
+                      }}
+                    >
+                      忽略
+                    </Button>
+                  </Tooltip>
+                )}
+                {canTransfer && (
                   <Button
                     type="link"
                     size="small"
-                    disabled={immutable}
                     onClick={() => {
-                      setCloseAlert(r)
-                      closeForm.resetFields()
+                      setTransferAlert(r)
+                      transferForm.resetFields()
                     }}
                   >
-                    关闭
+                    转交
                   </Button>
-                </Tooltip>
-                <Tooltip title={immutable ? '不能忽略' : ''}>
-                  <Button
-                    type="link"
-                    size="small"
-                    disabled={immutable}
-                    onClick={() => {
-                      setIgnoreAlert(r)
-                      ignoreForm.resetFields()
-                    }}
-                  >
-                    忽略
-                  </Button>
-                </Tooltip>
-                <Button
-                  type="link"
-                  size="small"
-                  onClick={() => {
-                    setTransferAlert(r)
-                    transferForm.resetFields()
-                  }}
-                >
-                  转交
-                </Button>
+                )}
               </>
             )}
+            <Button type="link" size="small" onClick={() => setDetailId(r.id)}>
+              详情
+            </Button>
             {(r.status === 'CLOSED' || r.status === 'IGNORED') && (
               <span style={{ color: '#9ca3af' }}>{r.close_reason ?? '—'}</span>
             )}
@@ -330,7 +389,13 @@ export default function AlertCenterPage() {
             pagination={false}
             rowClassName={() => 'clickable-row'}
             onRow={(r) => ({
-              onClick: () => patchFilters({ major_id: r.major_id ?? undefined }),
+              // 聚合行是「大项目 → 学院」两级，点击要同时带上学院，
+              // 否则点「物流管理学院 8 条」会把该项目下所有学院的预警都列出来。
+              onClick: () =>
+                patchFilters({
+                  major_id: r.major_id ?? undefined,
+                  college_id: r.college_id ?? undefined,
+                }),
               style: { cursor: 'pointer' },
             })}
           />
@@ -373,6 +438,16 @@ export default function AlertCenterPage() {
           value={filters.major_id}
           options={majors.map((m) => ({ value: m.id, label: m.name }))}
           onChange={(v) => patchFilters({ major_id: v })}
+        />
+        <Select
+          allowClear
+          showSearch
+          optionFilterProp="label"
+          placeholder="学院"
+          style={{ width: 180 }}
+          value={filters.college_id}
+          options={colleges.map((c) => ({ value: c.id, label: c.name }))}
+          onChange={(v) => patchFilters({ college_id: v })}
         />
         <Checkbox
           checked={filters.only_mine}
@@ -475,6 +550,115 @@ export default function AlertCenterPage() {
           </Form.Item>
         </Form>
       </Modal>
+
+      {/* 详情抽屉：触发详情 + 处置时间线 + 填写处置措施
+          早期 candidate.detail 从不落库、alert_action 前端也从不读取，
+          处置人只看到「有预警」看不到「为什么」，也查不到谁处理过。 */}
+      <Drawer
+        title={
+          detail
+            ? `预警详情 — ${ALERT_TYPE_LABEL[detail.alert_type] ?? detail.alert_type}`
+            : '预警详情'
+        }
+        width={560}
+        open={detailId !== null}
+        onClose={() => {
+          setDetailId(null)
+          setMeasureText('')
+        }}
+      >
+        {detailLoading && !detail ? (
+          <Spin />
+        ) : detail ? (
+          <Space direction="vertical" size={16} style={{ width: '100%' }}>
+            <Descriptions column={1} size="small" bordered>
+              <Descriptions.Item label="等级">
+                <AlertLevelTag level={detail.level} />
+              </Descriptions.Item>
+              <Descriptions.Item label="状态">
+                <AlertStatusTag status={detail.status} />
+              </Descriptions.Item>
+              <Descriptions.Item label="子项目">{detail.sub_name ?? '—'}</Descriptions.Item>
+              <Descriptions.Item label="触发时间">{fmtDateTime(detail.trigger_at)}</Descriptions.Item>
+              <Descriptions.Item label="处置截止">
+                {detail.deadline_at ? fmtDateTime(detail.deadline_at) : '—'}
+              </Descriptions.Item>
+              <Descriptions.Item label="合并次数">{detail.merged_count}</Descriptions.Item>
+              {detail.close_reason && (
+                <Descriptions.Item label="关闭/忽略理由">{detail.close_reason}</Descriptions.Item>
+              )}
+            </Descriptions>
+
+            {/* 触发详情：规则算出来的连续天数/阈值/风险描述等 */}
+            {detail.detail && Object.keys(detail.detail).length > 0 && (
+              <Card size="small" title="触发详情">
+                <Descriptions column={1} size="small">
+                  {Object.entries(detail.detail).map(([k, v]) => (
+                    <Descriptions.Item key={k} label={k}>
+                      {typeof v === 'object' ? JSON.stringify(v) : String(v)}
+                    </Descriptions.Item>
+                  ))}
+                </Descriptions>
+              </Card>
+            )}
+
+            {/* 填写处置措施（需求 3.3(4)：已认领 → 填写处置措施、关闭、转交） */}
+            {detail.status === 'CLAIMED' && canClaim && (
+              <Card size="small" title="填写处置措施">
+                <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                  <Input.TextArea
+                    rows={3}
+                    maxLength={1000}
+                    value={measureText}
+                    onChange={(e) => setMeasureText(e.target.value)}
+                    placeholder="例如：已联系企业对接人，设备 11 月 5 日到校"
+                  />
+                  <Button
+                    type="primary"
+                    disabled={!measureText.trim()}
+                    loading={measureMutation.isPending}
+                    onClick={() =>
+                      measureMutation.mutate({ id: detail.id, text: measureText.trim() })
+                    }
+                  >
+                    记录处置措施
+                  </Button>
+                </Space>
+              </Card>
+            )}
+
+            <Card size="small" title="处置时间线">
+              {detail.actions.length === 0 ? (
+                <span style={{ color: '#9ca3af' }}>暂无处置记录</span>
+              ) : (
+                <Timeline
+                  items={detail.actions.map((a) => ({
+                    color: ACTION_COLOR[a.action] ?? 'blue',
+                    children: (
+                      <Space direction="vertical" size={2}>
+                        <Space size={8}>
+                          <Tag color={ACTION_COLOR[a.action] ?? 'blue'} style={{ margin: 0 }}>
+                            {ACTION_LABEL[a.action] ?? a.action}
+                          </Tag>
+                          <span>{a.operator_name ?? '系统'}</span>
+                          <span style={{ color: '#9ca3af', fontSize: 12 }}>
+                            {fmtDateTime(a.created_at)}
+                          </span>
+                        </Space>
+                        {a.reason && (
+                          <span style={{ color: '#4b5563', fontSize: 13 }}>{a.reason}</span>
+                        )}
+                      </Space>
+                    ),
+                  }))}
+                />
+              )}
+            </Card>
+          </Space>
+        ) : (
+          <span style={{ color: '#9ca3af' }}>加载失败</span>
+        )}
+      </Drawer>
     </div>
   )
 }

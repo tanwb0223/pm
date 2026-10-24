@@ -60,6 +60,33 @@ function clearAuthAndRedirect() {
   }
 }
 
+/**
+ * 页面可读的错误对象
+ *
+ * 历史问题：拦截器 reject 时抛的是 `new Error(msg)`，而页面里普遍写
+ * `e.response.data.detail` —— 永远取不到，于是「24 小时内已催办过」
+ * 这类可操作提示会被兜底文案「催办失败」覆盖，还会弹两次。
+ * 现在统一抛 HttpError（继承 Error，带 status/detail），页面用 errorText() 取。
+ */
+export class HttpError extends Error {
+  status?: number
+  detail?: string
+
+  constructor(message: string, status?: number, detail?: string) {
+    super(message)
+    this.name = 'HttpError'
+    this.status = status
+    this.detail = detail
+  }
+}
+
+/** 页面里统一取错误文案（兼容 HttpError / Error / 未知） */
+export function errorText(e: unknown, fallback = '操作失败'): string {
+  if (e instanceof HttpError) return e.detail || e.message || fallback
+  if (e instanceof Error) return e.message || fallback
+  return fallback
+}
+
 /** 从后端错误响应里提取可读信息 */
 function pickErrorMessage(error: AxiosError): string {
   const resp = error.response
@@ -135,7 +162,13 @@ http.interceptors.response.use(
     }
     const msg = pickErrorMessage(error)
     message.error(msg)
-    return Promise.reject(new Error(msg))
+    // 带上 status 与原始 detail，页面可据此区分 403（无权限）与 404（不存在），
+    // 也避免再写一次取不到值的 e.response.data.detail
+    const detail =
+      typeof (error.response?.data as { detail?: unknown })?.detail === 'string'
+        ? ((error.response?.data as { detail?: string }).detail as string)
+        : msg
+    return Promise.reject(new HttpError(msg, error.response?.status, detail))
   },
 )
 
