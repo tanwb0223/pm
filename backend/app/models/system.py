@@ -11,6 +11,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Identity,
+    Index,
     Integer,
     String,
     UniqueConstraint,
@@ -83,6 +84,8 @@ class SysUserRole(Base):
             name="ck_user_role_scope",
         ),
         UniqueConstraint("user_id", "role_id", "scope_type", "scope_id", name="uq_user_role_scope"),
+        Index("idx_user_role_user", "user_id"),
+        Index("idx_user_role_scope", "scope_type", "scope_id"),
     )
 
     id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True)
@@ -130,6 +133,7 @@ class SysConfig(Base):
 
 class SysHoliday(Base):
     __tablename__ = "sys_holiday"
+    __table_args__ = (Index("idx_holiday_date", "date"),)
 
     id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True)
     date: Mapped[date] = mapped_column(Date, nullable=False, unique=True)
@@ -139,6 +143,11 @@ class SysHoliday(Base):
 
 class AuditLog(Base):
     __tablename__ = "audit_log"
+    __table_args__ = (
+        Index("idx_audit_time", "created_at"),
+        Index("idx_audit_op", "operator_id", "created_at"),
+        Index("idx_audit_target", "target_type", "target_id"),
+    )
 
     id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True)
     operator_id: Mapped[int | None] = mapped_column(BIGINT_PK, nullable=True)
@@ -153,6 +162,10 @@ class AuditLog(Base):
 
 class NotifyLog(Base):
     __tablename__ = "notify_log"
+    __table_args__ = (
+        Index("idx_notify_receiver", "receiver_id", "sent_at"),
+        Index("idx_notify_biz", "biz_type", "biz_id"),
+    )
 
     id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True)
     biz_type: Mapped[str] = mapped_column(String(32), nullable=False)

@@ -10,6 +10,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Identity,
+    Index,
     Integer,
     String,
     UniqueConstraint,
@@ -27,6 +28,9 @@ class Report(Base):
         CheckConstraint("type IN ('DAILY','WEEKLY','MONTHLY')", name="ck_report_type"),
         CheckConstraint("status IN ('DRAFT','SUBMITTED','VOIDED')", name="ck_report_status"),
         UniqueConstraint("sub_id", "type", "period_start", name="uq_report_period"),
+        Index("idx_report_period", "type", "period_start"),
+        Index("idx_report_sub", "sub_id", "type", "period_start"),
+        Index("idx_report_status", "status"),
     )
 
     id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True)
@@ -66,6 +70,7 @@ class ReportGrace(Base):
     __tablename__ = "report_grace"
     __table_args__ = (
         CheckConstraint("type IN ('DAILY','WEEKLY','MONTHLY')", name="ck_grace_type"),
+        Index("ix_report_grace_sub_type", "sub_id", "type"),
     )
 
     id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True)

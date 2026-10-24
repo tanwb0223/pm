@@ -127,6 +127,54 @@ def assert_report_access(user: CurrentUser, report: Any) -> None:
         raise ForbiddenError("无权访问该报表")
 
 
+# ---------------------------------------------------------------- 大项目
+def can_access_major(user: CurrentUser, major: Any) -> bool:
+    """大项目的**写权限**范围
+
+    只认三种：全校范围 / 大项目在本人 MAJOR 授权内 / 本人是该大项目负责人。
+    注意与 ProjectService.get_major 的读权限不同：读允许"本学院参与的项目"，
+    写不允许 —— 学院参与某个大项目，不代表能改它的名称和负责人。
+    """
+    if user.has_all_scope():
+        return True
+    major_id = getattr(major, "id", None)
+    if major_id is not None and major_id in user.major_ids():
+        return True
+    if getattr(major, "owner_id", None) == user.id:
+        return True
+    return False
+
+
+def assert_major_access(user: CurrentUser, major: Any) -> None:
+    """大项目编辑/删除：无权操作直接 403"""
+    if not can_access_major(user, major):
+        raise ForbiddenError("无权操作该项目")
+
+
+def can_edit_major_college(
+    user: CurrentUser, major: Any, college_id: int | None
+) -> bool:
+    """增删大项目的参与学院
+
+    非全校范围时，只要"该项目在本人 MAJOR 范围内"或"操作的是本学院"即可：
+    学院负责人能给自己学院挂到项目上，但不能替别的学院做决定。
+    """
+    if user.has_all_scope():
+        return True
+    if can_access_major(user, major):
+        return True
+    if college_id is not None and college_id in user.college_ids():
+        return True
+    return False
+
+
+def can_create_major(user: CurrentUser, owner_id: int | None) -> bool:
+    """新建大项目：非全校范围时，负责人必须是自己"""
+    if user.has_all_scope():
+        return True
+    return owner_id == user.id
+
+
 # ---------------------------------------------------------------- 新建目标范围
 def can_write_sub_target(user: CurrentUser, major_id: int | None, college_id: int | None) -> bool:
     """新建子项目时的目标范围校验（编辑/删除用 assert_sub_access）

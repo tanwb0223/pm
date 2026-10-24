@@ -8,7 +8,7 @@ from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import BusinessError, ForbiddenError, NotFoundError
-from app.core.scope import apply_scope
+from app.core.scope import apply_scope, assert_major_access, can_edit_major_college
 from app.db.dialect import ilike
 from app.models.project import ProjMajor, ProjMajorCollege, ProjSub
 from app.models.system import SysCollege, SysUser
@@ -190,10 +190,17 @@ class ProjectService:
                 raise ForbiddenError("无权访问该项目")
         return m
 
-    def create_major(self, body: MajorIn) -> ProjMajor:
+    def create_major(self, body: MajorIn, operator: Any) -> ProjMajor:
         if body.owner_id:
             if self.db.get(SysUser, body.owner_id) is None:
                 raise BusinessError("总负责人不存在")
+        # 数据范围：非全校范围时只能给自己建项目
+        # （否则拿到 project:major:edit 的人可以替任意人立项）
+        if not operator.has_all_scope():
+            if body.owner_id is not None and body.owner_id != operator.id:
+                raise ForbiddenError("无权为其他人新建大项目")
+            if body.owner_id is None:
+                body = body.model_copy(update={"owner_id": operator.id})
         m = ProjMajor(**body.model_dump())
         # 立项时锁定原始计划（第 38 项）
         m.original_start = body.original_start
@@ -202,10 +209,12 @@ class ProjectService:
         self.db.flush()
         return m
 
-    def update_major(self, major_id: int, body: MajorUpdateIn) -> ProjMajor:
+    def update_major(self, major_id: int, body: MajorUpdateIn, operator: Any) -> ProjMajor:
         m = self.db.get(ProjMajor, major_id)
         if m is None or m.deleted_at is not None:
             raise NotFoundError("大项目不存在")
+        # 数据范围：只能改自己授权范围内的大项目
+        assert_major_access(operator, m)
         data = body.model_dump(exclude_unset=True)
 
         # 原始计划不允许通过常规编辑修改（第 38 项：变更走变更登记）
@@ -238,10 +247,12 @@ class ProjectService:
         self.db.flush()
         return m
 
-    def delete_major(self, major_id: int) -> None:
+    def delete_major(self, major_id: int, operator: Any) -> None:
         m = self.db.get(ProjMajor, major_id)
         if m is None or m.deleted_at is not None:
             raise NotFoundError("大项目不存在")
+        # 数据范围：只能删自己授权范围内的大项目
+        assert_major_access(operator, m)
         sub_count = self.db.scalar(
             select(func.count()).select_from(ProjSub).where(
                 ProjSub.major_id == major_id, ProjSub.deleted_at.is_(None)
@@ -282,8 +293,11 @@ class ProjectService:
             )
         return out
 
-    def add_major_college(self, major_id: int, body) -> None:
-        self.get_major(major_id)
+    def add_major_college(self, major_id: int, body, operator: Any) -> None:
+        major = self.get_major(major_id)
+        # 数据范围：项目在我范围内，或操作的是本学院
+        if not can_edit_major_college(operator, major, body.college_id):
+            raise ForbiddenError("无权修改该项目的参与学院")
         if self.db.get(SysCollege, body.college_id) is None:
             raise BusinessError("学院不存在")
         if body.college_owner_id and self.db.get(SysUser, body.college_owner_id) is None:
@@ -303,7 +317,11 @@ class ProjectService:
             )
         self.db.flush()
 
-    def remove_major_college(self, major_id: int, college_id: int) -> None:
+    def remove_major_college(self, major_id: int, college_id: int, operator: Any) -> None:
+        major = self.get_major(major_id)
+        # 数据范围：项目在我范围内，或操作的是本学院
+        if not can_edit_major_college(operator, major, college_id):
+            raise ForbiddenError("无权修改该项目的参与学院")
         sub_count = self.db.scalar(
             select(func.count()).select_from(ProjSub).where(
                 ProjSub.major_id == major_id,

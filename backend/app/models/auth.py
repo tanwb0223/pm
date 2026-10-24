@@ -9,6 +9,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Identity,
+    Index,
     Integer,
     LargeBinary,
     String,
@@ -55,6 +56,10 @@ class AuthLoginState(Base):
     """登录流程态：state + nonce + PKCE verifier + 一次性登录码"""
 
     __tablename__ = "auth_login_state"
+    __table_args__ = (
+        Index("idx_login_state_expires", "expires_at"),
+        Index("idx_login_state_code", "login_code"),
+    )
 
     state: Mapped[str] = mapped_column(String(64), primary_key=True)
     provider_id: Mapped[int] = mapped_column(
@@ -79,6 +84,7 @@ class AuthIdentity(Base):
     __tablename__ = "auth_identity"
     __table_args__ = (
         UniqueConstraint("provider_id", "subject", name="uq_identity_provider_subject"),
+        Index("idx_identity_user", "user_id"),
     )
 
     id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True)

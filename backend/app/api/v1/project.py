@@ -165,25 +165,38 @@ def get_major(
 
 
 @router.post("/majors", summary="新建大项目", dependencies=[Depends(require_perm("project:major:edit"))])
-def create_major(body: MajorIn, db: Session = Depends(get_db)):
+def create_major(
+    body: MajorIn,
+    user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     svc = ProjectService(db)
-    m = svc.create_major(body)
+    m = svc.create_major(body, user)
     db.commit()
     return ok({"id": m.id})
 
 
 @router.put("/majors/{major_id}", summary="编辑大项目", dependencies=[Depends(require_perm("project:major:edit"))])
-def update_major(major_id: int, body: MajorUpdateIn, db: Session = Depends(get_db)):
+def update_major(
+    major_id: int,
+    body: MajorUpdateIn,
+    user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     svc = ProjectService(db)
-    svc.update_major(major_id, body)
+    svc.update_major(major_id, body, user)
     db.commit()
     return ok()
 
 
 @router.delete("/majors/{major_id}", summary="删除大项目", dependencies=[Depends(require_perm("project:major:edit"))])
-def delete_major(major_id: int, db: Session = Depends(get_db)):
+def delete_major(
+    major_id: int,
+    user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     svc = ProjectService(db)
-    svc.delete_major(major_id)
+    svc.delete_major(major_id, user)
     db.commit()
     return ok()
 
@@ -205,9 +218,14 @@ def list_major_colleges(
     summary="添加参与学院 / 指定学院负责人",
     dependencies=[Depends(require_perm("project:college:edit"))],
 )
-def add_major_college(major_id: int, body: MajorCollegeIn, db: Session = Depends(get_db)):
+def add_major_college(
+    major_id: int,
+    body: MajorCollegeIn,
+    user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     svc = ProjectService(db)
-    svc.add_major_college(major_id, body)
+    svc.add_major_college(major_id, body, user)
     db.commit()
     return ok()
 
@@ -217,9 +235,14 @@ def add_major_college(major_id: int, body: MajorCollegeIn, db: Session = Depends
     summary="移除参与学院",
     dependencies=[Depends(require_perm("project:college:edit"))],
 )
-def remove_major_college(major_id: int, college_id: int, db: Session = Depends(get_db)):
+def remove_major_college(
+    major_id: int,
+    college_id: int,
+    user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     svc = ProjectService(db)
-    svc.remove_major_college(major_id, college_id)
+    svc.remove_major_college(major_id, college_id, user)
     db.commit()
     return ok()
 

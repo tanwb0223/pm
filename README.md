@@ -16,7 +16,7 @@ pm/
 │   ├── Windows部署指南.md                              Windows 部署（含内网离线）
 │   ├── 服务器配置建议.md                               配置选型与参数调优
 │   └── 数据库双支持说明.md                             SQLite / PostgreSQL 切换与差异
-├── backend/                    FastAPI + PostgreSQL 后端（84 个 API）
+├── backend/                    FastAPI + PostgreSQL 后端（106 个 API）
 ├── frontend/                   React 18 + TypeScript + Ant Design 5 前端（22 个页面）
 ├── pack.sh                     离线打包（同时产出 Linux 与 Windows 部署包）
 ├── deploy-linux.sh             Linux 一键部署脚本
@@ -49,7 +49,11 @@ cd backend
 python -m venv .venv
 .\.venv\Scripts\activate
 pip install -r requirements.txt      # 或按 README 逐个安装
-copy .env.example .env               # 修改数据库连接与密钥
+copy .env.example .env               # 修改数据库连接
+
+# 【必做】生成 JWT 密钥写入 .env 的 PM_SECRET_KEY（至少 32 位随机串）
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+# 未设置或仍是占位值时，非 PM_DEBUG 模式下应用会拒绝启动
 
 $env:PM_DATABASE_URL="postgresql+psycopg://postgres:123@localhost:5432/pm_dev"
 alembic upgrade head                 # 建表 + 种子数据
@@ -181,31 +185,37 @@ AL-09 / AL-10 只能通过补齐数据自动关闭，不能手工关闭或忽略
 
 | 模块 | 接口数 | 说明 |
 |---|---|---|
-| 认证 | 14 | 9 种协议，配置入库，密钥 Fernet 加密 |
+| 认证 | 15 | 9 种协议，配置入库，密钥 Fernet 加密，登录失败锁定 |
 | 项目台账 | 18 | 学院 / 大项目 / 学院分工 / 子项目 / 完整性检查 |
-| 进度管控 | 9 | 填报留痕 / 进度总表 / 汇总 / 趋势 / 每日快照 |
+| 进度管控 | 10 | 填报留痕 / 进度总表 / 汇总 / 趋势 / 每日快照 / 催办 |
 | 预警管理 | 11 | 扫描 / 去重 / 状态机 / 升级 / 统计 |
-| 报表管理 | 10 | 日周月报 / 周报初稿 / 更正作废 / 及时率 |
+| 报表管理 | 13 | 日周月报 / 周报初稿 / 更正作废 / 逾期补填 / 及时率 |
 | 数据导出 | 4 | Excel / PDF（中文字体） |
-| 系统管理 | 22 | 组织（学院）/ 用户 / 角色 / 授权 / 参数 / 日历 / 审计 / 批量导入 |
+| 系统管理 | 23 | 组织 / 用户 / 角色 / 授权 / 参数 / 日历 / 审计 / 通知日志 / 存储运维 / 批量导入 |
 | 风险登记 | 5 | 登记 / 闭环 / 超期识别 |
 | 附件管理 | 7 | 上传 / 下载 / 预览 / 软删除 / 存储统计 |
 
 ## 数据库
 
-23 张表，5 个 Alembic 迁移：
+24 张表，7 个 Alembic 迁移：
 
 | 迁移 | 内容 |
 |---|---|
 | `0001_init` | 24 张业务表 + 种子（7 角色 / 38 权限 / 33 参数） |
 | `0002_auth` | 3 张认证表 + 9 种协议初始化 |
-| `0003_alert_nullable` | `alert_action.operator_id` 允许为空 |
+| `0003_alert_action_nullable` | `alert_action.operator_id` 允许为空 |
 | `0004_attachment` | 附件表增强（哈希 / 软删除 / 下载计数 / `stored_path`） |
 | `0005_role_perms` | 按角色矩阵补齐权限（修正"填报人没有填报权限"） |
+| `0006_password_selfservice` | 自助改密：`must_change_password` / `password_updated_at` |
+| `0007_report_grace` | 逾期补填放行表 `report_grace` |
 
 > SQLite 部署不走迁移：启动时 `create_all` 建表 + 自动写入版本标记；
 > 版本落后时自动执行增量迁移，已知的结构漂移（如 `alert_action.operator_id`）
 > 由 `app/db/alembic_sync.repair_sqlite_schema()` 自动修复。
+>
+> 索引必须声明在模型 `__table_args__` 里（`Index(...)`），不能只写在迁移中：
+> SQLite 走 `create_all`，迁移里的 `create_index` 不会执行。存量库启动时由
+> `ensure_indexes()` 按 inspector 比对补齐，幂等。
 
 ## 部署
 

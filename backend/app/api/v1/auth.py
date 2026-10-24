@@ -10,8 +10,9 @@ from sqlalchemy.orm import Session
 from app.auth.service import AuthService
 from app.core.deps import CurrentUser, get_current_user, require_perm
 from app.core.exceptions import BusinessError
+from app.core.login_guard import login_throttle
 from app.core.response import ok
-from app.core.security import create_access_token
+from app.core.security import create_access_token, password_version
 from app.db.session import get_db
 
 router = APIRouter(prefix="/api/auth", tags=["认证"])
@@ -62,12 +63,19 @@ def list_public_providers(request: Request, db: Session = Depends(get_db)):
 @router.post("/login", summary="账号密码登录")
 def login_password(body: PasswordLoginIn, request: Request, db: Session = Depends(get_db)):
     svc = AuthService(db, _public_base(request))
+    # 防在线撞库：同一账号连续失败达到上限后锁定（见 core/login_guard.py）
+    key = f"pwd:{body.username.strip().lower()}"
+    wait = login_throttle.locked_seconds(key)
+    if wait:
+        raise BusinessError(f"登录失败次数过多，请 {max(1, wait // 60)} 分钟后再试")
     try:
         user = svc.login_password(body.username, body.password)
     except ValueError as e:
+        login_throttle.record_failure(key)
         raise BusinessError(str(e)) from e
+    login_throttle.reset(key)
     db.commit()
-    token = create_access_token(user.id)
+    token = create_access_token(user.id, {"pv": password_version(user)})
     return ok(
         {
             "access_token": token,
@@ -82,12 +90,18 @@ def login_password(body: PasswordLoginIn, request: Request, db: Session = Depend
 @router.post("/login/ldap", summary="LDAP / AD 域登录")
 def login_ldap(body: LdapLoginIn, request: Request, db: Session = Depends(get_db)):
     svc = AuthService(db, _public_base(request))
+    key = f"ldap:{body.username.strip().lower()}"
+    wait = login_throttle.locked_seconds(key)
+    if wait:
+        raise BusinessError(f"登录失败次数过多，请 {max(1, wait // 60)} 分钟后再试")
     try:
         user = svc.login_ldap(body.username, body.password)
     except ValueError as e:
+        login_throttle.record_failure(key)
         raise BusinessError(str(e)) from e
+    login_throttle.reset(key)
     db.commit()
-    token = create_access_token(user.id)
+    token = create_access_token(user.id, {"pv": password_version(user)})
     return ok({"access_token": token, "token_type": "bearer", "user": {"id": user.id, "name": user.name}})
 
 
@@ -137,7 +151,7 @@ def exchange_token(body: ExchangeIn, request: Request, db: Session = Depends(get
     except ValueError as e:
         raise BusinessError(str(e)) from e
     db.commit()
-    token = create_access_token(user.id)
+    token = create_access_token(user.id, {"pv": password_version(user)})
     return ok({"access_token": token, "token_type": "bearer"})
 
 
@@ -223,7 +237,10 @@ def change_password(
     row.must_change_password = False
     row.password_updated_at = datetime.now(UTC)
     db.commit()
-    return ok({"changed": True})
+
+    # 改密后旧令牌立即失效（deps 校验 iat < password_updated_at）。
+    # 这里换发一个新令牌，避免用户改完密码被自己的安全策略踢下线。
+    return ok({"changed": True, "access_token": create_access_token(row.id, {"pv": password_version(row)})})
 
 
 @router.get("/me/identities", summary="已绑定的第三方账号")

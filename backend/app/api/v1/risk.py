@@ -1,7 +1,7 @@
 """风险登记 API"""
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
@@ -53,7 +53,8 @@ class RiskIn(BaseModel):
     level: str = Field(default="MEDIUM", pattern="^(HIGH|MEDIUM|LOW)$")
     description: str = Field(min_length=1, max_length=2000)
     owner_id: int | None = None
-    plan_close_date: date
+    # 不填则按参数 alert.AL-08.days（风险闭环默认天数）自动算
+    plan_close_date: date | None = None
 
 
 class RiskUpdateIn(BaseModel):
@@ -154,7 +155,14 @@ def create_risk(
         raise BusinessError("子项目不存在")
     # 数据范围：只能在自己管辖范围内登记风险
     _assert_risk_write_scope(user, body.major_id, body.sub_id, db)
-    r = Risk(**body.model_dump())
+    data = body.model_dump()
+    if data.get("plan_close_date") is None:
+        # 参数 alert.AL-08.days 决定默认闭环天数（此前该参数改了没有任何效果）
+        from app.services.config_service import ConfigService
+
+        days = max(1, ConfigService(db).get_int("alert.AL-08.days", 7))
+        data["plan_close_date"] = date.today() + timedelta(days=days)
+    r = Risk(**data)
     db.add(r)
     db.commit()
     return ok({"id": r.id})

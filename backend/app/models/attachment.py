@@ -21,6 +21,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Identity,
+    Index,
     Integer,
     String,
     func,
@@ -38,6 +39,12 @@ class Attachment(Base):
     """
 
     __tablename__ = "attachment"
+    __table_args__ = (
+        Index("idx_att_biz", "biz_type", "biz_id"),
+        Index("idx_att_uploader", "uploader_id"),
+        Index("idx_att_created", "uploaded_at"),
+        Index("idx_att_sha256", "sha256"),
+    )
 
     id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True)
 

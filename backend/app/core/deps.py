@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime
+from datetime import date
 
 from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ForbiddenError, UnauthorizedError
-from app.core.security import decode_token
+from app.core.security import decode_token, password_version
 from app.db.session import get_db
 from app.models.system import SysPermission, SysRole, SysRolePermission, SysUser, SysUserRole
 
@@ -118,6 +118,10 @@ def get_current_user(
     user = db.get(SysUser, int(sub))
     if user is None or user.status != "ACTIVE":
         raise UnauthorizedError("账号不可用")
+
+    # 改密后旧令牌立即失效：令牌里的 pv 必须等于当前口令版本
+    if int(payload.get("pv", 0)) != password_version(user):
+        raise UnauthorizedError("密码已变更，请重新登录")
 
     ctx = _load_user_context(db, user)
     # 缓存到 request.state，审计日志可用

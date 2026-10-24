@@ -107,6 +107,12 @@ def init_db() -> None:
 
     repair_sqlite_schema(_url)
 
+    # 补齐缺失索引：存量库的表是早期 create_all 建的，当时模型没声明 Index，
+    # 迁移里的 40 多条 create_index 从未执行过。这里做一次幂等比对补齐。
+    from app.db.alembic_sync import ensure_indexes
+
+    ensure_indexes(_url)
+
     # 写入 Alembic 版本标记
     # 否则后续 alembic upgrade 会以为数据库是空的，重复建表
     from app.db.alembic_sync import ensure_alembic_stamped

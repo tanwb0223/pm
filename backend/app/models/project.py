@@ -12,6 +12,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Identity,
+    Index,
     Integer,
     Numeric,
     String,
@@ -33,6 +34,11 @@ class ProjMajor(Base):
             "acceptance_status IN ('NOT_REQUIRED','PENDING','PASSED','RECTIFYING','REJECTED')",
             name="ck_major_acceptance",
         ),
+        # 索引必须声明在模型上：SQLite 部署走 create_all 建表，不执行 Alembic，
+        # 只在迁移里写 create_index 会导致默认库里一条索引都没有（全表扫描）。
+        Index("idx_major_owner", "owner_id"),
+        Index("idx_major_status", "status"),
+        Index("idx_major_deleted", "deleted_at"),
     )
 
     id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True)
@@ -75,6 +81,7 @@ class ProjMajorCollege(Base):
     """大项目 ↔ 参与学院（多对多）"""
 
     __tablename__ = "proj_major_college"
+    __table_args__ = (Index("idx_major_college_college", "college_id"),)
 
     major_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("proj_major.id"), primary_key=True
@@ -101,6 +108,12 @@ class ProjSub(Base):
             "acceptance_status IN ('NOT_REQUIRED','PENDING','PASSED','RECTIFYING','REJECTED')",
             name="ck_sub_acceptance",
         ),
+        Index("idx_sub_major", "major_id"),
+        Index("idx_sub_college", "college_id"),
+        Index("idx_sub_owner", "owner_id"),
+        Index("idx_sub_status", "status"),
+        Index("idx_sub_plan", "plan_start", "plan_end"),
+        Index("idx_sub_last_update", "last_update_at"),
     )
 
     id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True)
@@ -132,7 +145,11 @@ class ProgRecord(Base):
     """★ 进度留痕（只增不改）"""
 
     __tablename__ = "prog_record"
-    __table_args__ = (CheckConstraint("progress BETWEEN 0 AND 100", name="ck_record_progress"),)
+    __table_args__ = (
+        CheckConstraint("progress BETWEEN 0 AND 100", name="ck_record_progress"),
+        Index("idx_record_sub_time", "sub_id", "created_at"),
+        Index("idx_record_time", "created_at"),
+    )
 
     id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True)
     sub_id: Mapped[int] = mapped_column(BIGINT_PK, ForeignKey("proj_sub.id"), nullable=False)
@@ -152,6 +169,11 @@ class ProgSnapshot(Base):
     """★ 每日快照：让"连续 N 天"判定变成纯 SQL"""
 
     __tablename__ = "prog_snapshot"
+    __table_args__ = (
+        Index("idx_snap_date", "snap_date"),
+        Index("idx_snap_dev", "snap_date", "deviation"),
+        Index("idx_snap_stagnant", "snap_date", "days_since_update"),
+    )
 
     sub_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("proj_sub.id"), primary_key=True

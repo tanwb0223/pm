@@ -325,8 +325,18 @@ class AlertService:
         if college_id:
             stmt = stmt.where(Alert.college_id == college_id)
         if only_mine:
+            # "只看我的" = 我认领的 + 我负责的子项目产生的。
+            # 早期写成 or_(claimed_by == 我, status == 'PENDING')，
+            # 结果勾选后反而把范围内所有人的待处置预警都返回了。
             stmt = stmt.where(
-                or_(Alert.claimed_by == user.id, Alert.status == "PENDING")
+                or_(
+                    Alert.claimed_by == user.id,
+                    Alert.sub_id.in_(
+                        select(ProjSub.id).where(
+                            ProjSub.owner_id == user.id, ProjSub.deleted_at.is_(None)
+                        )
+                    ),
+                )
             )
 
         total = self.db.scalar(select(func.count()).select_from(stmt.subquery())) or 0

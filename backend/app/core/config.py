@@ -1,14 +1,27 @@
 """应用配置：从环境变量 / .env 读取"""
 from __future__ import annotations
 
+import logging
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # 项目根目录（backend/ 的上一级）
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+
+logger = logging.getLogger(__name__)
+
+# 内置占位密钥：既不能用于生产，也不该在日志里被当成"已配置"
+_PLACEHOLDER_SECRETS = {
+    "dev-secret-change-me-in-production",
+    "请替换为随机字符串（至少 32 位）",
+    "change-me",
+    "changeme",
+    "secret",
+}
+_MIN_SECRET_LEN = 32
 
 
 class Settings(BaseSettings):
@@ -23,8 +36,40 @@ class Settings(BaseSettings):
     app_name: str = "产教融合项目管理系统"
     debug: bool = False
     secret_key: str = "dev-secret-change-me-in-production"
-    access_token_expire_minutes: int = 30
+    # 8 小时：内网系统一天一班，30 分钟会让用户反复被踢下线。
+    # 需要更严的时效时改 .env 的 PM_ACCESS_TOKEN_EXPIRE_MINUTES。
+    access_token_expire_minutes: int = 480
     algorithm: str = "HS256"
+
+    # 登录防爆破（同一账号 + 同一来源连续失败）
+    login_max_attempts: int = 5
+    login_lock_minutes: int = 15
+
+    @model_validator(mode="after")
+    def _check_secret_key(self) -> "Settings":
+        """拒绝用占位密钥启动生产实例
+
+        JWT 用 HS256 对称签名，密钥泄露 = 任何人都能伪造任意用户的 token。
+        仓库里带了 .env.example，用户照抄就会拿到一个公开常量，
+        所以这里必须硬拦一次，而不是只在文档里写"记得改"。
+        """
+        key = (self.secret_key or "").strip()
+        weak = key in _PLACEHOLDER_SECRETS or len(key) < _MIN_SECRET_LEN
+        if not weak:
+            return self
+        if self.debug:
+            logger.warning(
+                "PM_SECRET_KEY 仍是占位值或长度不足 %d 位，调试模式放行；"
+                "上生产前务必替换。",
+                _MIN_SECRET_LEN,
+            )
+            return self
+        raise ValueError(
+            "PM_SECRET_KEY 未设置或仍为占位值（长度需 ≥ %d）。"
+            "请生成一个随机密钥后写入 backend/.env：\n"
+            '    python -c "import secrets; print(secrets.token_urlsafe(48))"'
+            % _MIN_SECRET_LEN
+        )
 
     # ---------------------------------------------------------------- 数据库
     # 留空则自动使用 SQLite（零依赖，解压即用）

@@ -10,6 +10,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Identity,
+    Index,
     Integer,
     String,
     Text,
@@ -35,6 +36,11 @@ class Alert(Base):
             "'AL-07','AL-08','AL-09','AL-10','AL-11')",
             name="ck_alert_type",
         ),
+        Index("idx_alert_dedup", "dedup_key", "created_at"),
+        Index("idx_alert_status", "status", "level"),
+        Index("idx_alert_scope", "major_id", "college_id"),
+        Index("idx_alert_deadline", "status", "deadline_at"),
+        Index("idx_alert_sub", "sub_id"),
     )
 
     id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True)
@@ -75,6 +81,7 @@ class AlertAction(Base):
         CheckConstraint(
             "action IN ('CLAIM','TRANSFER','CLOSE','IGNORE','ESCALATE')", name="ck_action_type"
         ),
+        Index("idx_action_alert", "alert_id"),
     )
 
     id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True)
@@ -97,6 +104,8 @@ class Risk(Base):
     __table_args__ = (
         CheckConstraint("level IN ('HIGH','MEDIUM','LOW')", name="ck_risk_level"),
         CheckConstraint("status IN ('OPEN','CLOSED')", name="ck_risk_status"),
+        Index("idx_risk_major", "major_id"),
+        Index("idx_risk_open", "status", "plan_close_date"),
     )
 
     id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True)

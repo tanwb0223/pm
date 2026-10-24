@@ -150,6 +150,11 @@ class ReportService:
             raise BusinessError("不能提交未来周期的报表")
         p_start, p_end = self.period_of(rtype, base_day)
 
+        # 日报：免填日历里标记的日期不接收（寒暑假 / 法定节假日）。
+        # 周报月报不拦 —— 只要当期有工作日就应交，由 is_due() 在待填清单里控制。
+        if rtype == "DAILY" and self.cal.is_free_day(p_start):
+            raise BusinessError(f"{p_start} 是免填日（见免填日历），无需提交日报")
+
         # 截止 + 补填期校验：超过「截止时间 + report.correct_days 天」不再接收。
         # 早期不校验，既能补交很久以前的报表，也能提交未来周期。
         # 超期后若学院负责人开了补填（report_grace），仍可提交。

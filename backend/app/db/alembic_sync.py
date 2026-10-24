@@ -252,3 +252,52 @@ def repair_sqlite_schema(db_url: str) -> int:
         return 0
     finally:
         engine.dispose()
+
+
+def ensure_indexes(db_url: str) -> int:
+    """按模型声明补齐缺失的普通索引（幂等，跨方言）
+
+    问题背景：
+        索引原来只写在 Alembic 迁移（0001_init / 0002_auth / 0004_attachment）
+        的 op.create_index 里。SQLite 部署走 create_all 建表，不执行迁移，
+        而 create_all 也不会给已存在的表补索引 —— 结果默认部署的库里
+        一条二级索引都没有，进度总表、及时率、预警扫描全部退化成全表扫描。
+
+    做法：
+        模型的 __table_args__ 里声明 Index 之后，建新表时会自带索引；
+        对已经建好的存量库，这里按 inspector 比对索引名，缺哪条补哪条。
+
+    返回本次新建的索引数。
+    """
+    from app.db.session import Base
+
+    engine = create_engine(db_url, pool_pre_ping=True)
+    created = 0
+    try:
+        insp = inspect(engine)
+        tables = set(insp.get_table_names())
+        with engine.begin() as conn:
+            for table in Base.metadata.sorted_tables:
+                if table.name not in tables:
+                    continue
+                try:
+                    have = {ix["name"] for ix in insp.get_indexes(table.name)}
+                except Exception:  # 视图 / 特殊表
+                    continue
+                for index in table.indexes:
+                    name = index.name or ""
+                    if not name or name in have:
+                        continue
+                    try:
+                        index.create(conn, checkfirst=True)
+                        created += 1
+                    except Exception:
+                        logger.warning("补索引失败：%s", name, exc_info=True)
+        if created:
+            logger.info("补齐缺失索引 %d 条", created)
+        return created
+    except Exception:
+        logger.warning("索引检查失败（不影响启动）", exc_info=True)
+        return 0
+    finally:
+        engine.dispose()
