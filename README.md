@@ -8,19 +8,19 @@
 pm/
 ├── doc/                        全部文档
 │   ├── 产教融合项目管理系统-需求方案说明书-V1.4.docx   需求方案（含 42 条待确认事项）
-│   ├── 需求文档分析报告.md                            需求解读与疑点梳理
-│   ├── 功能缺失分析报告.md                            与通用项目管理软件的差距分析
-│   ├── 功能缺失复核报告.md                            代码实现与需求的逐项核对
 │   ├── 开发方案.md                                    技术选型、数据模型、工作量
-│   ├── Linux原生部署指南.md                            Linux 部署（含内网离线）
-│   ├── Windows部署指南.md                              Windows 部署（含内网离线）
+│   ├── Linux原生部署指南.md                            Linux 原生部署（含内网离线）
+│   ├── 线下部署手册.md                                 Linux 单机 · SQLite 全流程手册
+│   ├── 服务器部署与发布指南.md                         线上服务器发布与回滚
 │   ├── 服务器配置建议.md                               配置选型与参数调优
-│   └── 数据库双支持说明.md                             SQLite / PostgreSQL 切换与差异
+│   ├── 数据库双支持说明.md                             SQLite / PostgreSQL 切换与差异
+│   └── 业务流程与操作手册.md                           业务操作说明
 ├── backend/                    FastAPI + SQLite/PostgreSQL 后端（105 个 API）
 ├── frontend/                   React 18 + TypeScript + Ant Design 5 前端（22 个页面）
-├── pack.sh                     离线打包（同时产出 Linux 与 Windows 部署包）
-├── deploy-linux.sh             Linux 一键部署脚本
-├── deploy-windows.ps1          Windows 一键部署脚本
+├── pack.sh                     构建 Linux 部署包（含离线依赖 wheel）
+├── pack.ps1                    同上，Windows 打包机版本
+├── deploy-linux.sh             Linux 原生一键部署脚本
+├── release.sh                  Linux 服务器一键重新发布
 └── README.md                   本文件
 ```
 
@@ -196,8 +196,7 @@ AL-09 / AL-10 只能通过补齐数据自动关闭，不能手工关闭或忽略
 | 风险登记 | 5 | 登记 / 闭环 / 超期识别 |
 | 附件管理 | 9 | 上传 / 下载 / 预览 / 软删除 / 存储统计 / 孤儿清理 |
 
-> 接口总数 **105**（`app.openapi()` 实测）。每条业务链路都要求「入口 → 数据 → 状态 → 反馈」闭环，
-> 详细的分级修复清单见 `doc/闭环缺口汇总-20261024.md` 与 `doc/修复记录-20261024-闭环.md`。
+> 接口总数 **105**（`app.openapi()` 实测）。每条业务链路都要求「入口 → 数据 → 状态 → 反馈」闭环。
 
 ## 数据库
 
@@ -227,21 +226,41 @@ AL-09 / AL-10 只能通过补齐数据自动关闭，不能手工关闭或忽略
 
 ## 部署
 
-### Docker（推荐：离线部署只需拷镜像）
+### Linux 原生部署（systemd，唯一支持方式）
 
-`docker/` 提供完整的 Docker Compose 方案：
+目标机只需预装 **Python 3.12**。数据库默认 **SQLite**（单机、零额外服务）；需要 PostgreSQL 时给部署脚本加 `--postgres`。
 
-- 有网机器构建离线包：`bash docker/build-offline.sh`，Windows 用 `powershell -ExecutionPolicy Bypass -File docker\build-offline.ps1`
-- 目标机：解压 → 修改 `.env` → `sudo bash deploy.sh`
-- 离线包约 **70 MB**（含 app + Caddy 镜像），目标机不需要源码、Python、Node、外网
-- 域名、证书、SQLite 数据目录、附件目录都在 `.env` 配置
-- 日常运维用 `./pmctl.sh status|logs|backup|restore|upgrade`
+**方式一：源码直接部署**
 
-详见 [`docker/README.md`](docker/README.md)。
+```bash
+git clone <repo> /opt/pm && cd /opt/pm
+sudo bash deploy-linux.sh
+```
 
-### 原生部署（systemd + Nginx）
+**方式二：离线包部署（内网）**
 
-生产环境参考 `frontend/README.md` 的 Nginx 配置，要点：
+在联网的打包机上构建（Python 3.12 必需）：
+
+```bash
+bash pack.sh          # Linux 打包机
+# Windows 打包机：.\pack.ps1
+```
+
+产出 `dist/pm-linux-<版本>.tar.gz`（含源码、`wheels/` 离线依赖、前端 `dist`）。拷到目标机：
+
+```bash
+tar xzf pm-linux-<版本>.tar.gz
+cd pm && sudo bash deploy.sh
+```
+
+`deploy.sh` 依次完成：建 `pm` 用户与 `/opt/pm`、`/data/pm` → 建 venv →
+离线装依赖 → 初始化数据库 → 写 `.env` → 迁移 → 配 systemd → 健康检查 → 建管理员。
+
+**日常更新**：`./release.sh`（拉代码 → 装依赖 → 构建前端 → 备份 → 迁移 → 重启 → 健康检查）。
+
+完整流程见 [`doc/Linux原生部署指南.md`](doc/Linux原生部署指南.md) 与 [`doc/线下部署手册.md`](doc/线下部署手册.md)。
+
+若用 Nginx 托管前端，要点：
 
 - 前端 `try_files $uri $uri/ /index.html`（history 路由）
 - `/api/` 反向代理到后端，**必须转发 `X-Forwarded-Proto` / `X-Forwarded-Host`**（用于拼接 OIDC/CAS 回调地址）

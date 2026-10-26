@@ -1,7 +1,0 @@
-# TLS 模式覆盖：auto / file / internal 使用 80 + 443（含 HTTP/3 UDP）
-services:
-  caddy:
-    ports:
-      - "${PM_HTTP_PORT:-80}:80"
-      - "${PM_HTTPS_PORT:-443}:443"
-      - "${PM_HTTPS_PORT:-443}:443/udp"

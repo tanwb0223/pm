@@ -108,10 +108,7 @@ backend/fonts/*.otf
 .work/
 
 # 打包产物（体积大，不入库）
-pm-windows-portable.zip
-pm-linux-portable.tar.gz
-pm-offline-*.zip
-pm-offline-*.tar.gz
+# 构建输出统一放在 dist/，已由上方 `dist/` 规则覆盖
 
 # 前端包管理器无关文件（保留 pnpm-lock.yaml）
 frontend/package-lock.json

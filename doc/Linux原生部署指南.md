@@ -13,9 +13,9 @@
         ↓
 bash pack.sh
         ↓
-pm-offline-linux.tar.gz  ──拷贝──→  tar xzf
+dist/pm-linux-<版本>.tar.gz  ──拷贝──→  tar xzf
                                       ↓
-                                   sudo bash install.sh
+                                       sudo bash deploy.sh
 ```
 
 **打包一次，内网一条命令装完。**
@@ -26,12 +26,15 @@ pm-offline-linux.tar.gz  ──拷贝──→  tar xzf
 
 ## 二、前提条件
 
-内网服务器需要预先装好两样东西（离线安装方法见第五节）：
+内网服务器只需预装 **Python 3.12**（离线安装方法见第五节）：
 
-| 软件 | 版本 | 检查命令 |
-|---|---|---|
-| Python | **3.12** | `python3.12 --version` |
-| PostgreSQL | **18** | `psql --version` |
+| 软件 | 版本 | 检查命令 | 是否必需 |
+|---|---|---|---|
+| Python | **3.12** | `python3.12 --version` | 必需 |
+| PostgreSQL | 18 | `psql --version` | 可选，默认用 SQLite |
+
+数据库默认 **SQLite**（单机、零额外服务，本项目用户量下足够）。
+需要 PostgreSQL 时部署脚本加 `--postgres`。
 
 系统建议：Ubuntu 22.04 / CentOS 7+ / 麒麟 V10，2 核 4GB 起。
 
@@ -54,30 +57,26 @@ pm/
 ├── backend/
 ├── frontend/
 ├── pack.sh
-├── deploy-linux.sh
-└── deploy-windows.ps1
+├── pack.ps1
+└── deploy-linux.sh
 ```
 
 ### 3.2 执行打包
 
-**Linux / macOS 打包机**：
+**Linux 打包机**：
 
 ```bash
 cd pm
-
-# 同时打包 Windows 和 Linux（推荐）
 bash pack.sh
-
-# 或只打 Linux
-bash pack.sh linux
 ```
 
 **Windows 打包机**（用 PowerShell，见 `pack.ps1`）：
 
 ```powershell
 cd pm
-.\pack.ps1            # 同时打包双平台
-.\pack.ps1 -Target linux
+.\pack.ps1
+# 若 3.12 不在默认位置：
+.\pack.ps1 -PythonHome "D:\Programs\Python312"
 ```
 
 ### 3.3 打包机需要什么
@@ -93,23 +92,26 @@ cd pm
 ### 3.4 产出
 
 ```
-pm-offline-linux.tar.gz      约 100 MB
-pm-offline-windows.zip       约 100 MB
+dist/pm-linux-<版本>.tar.gz          约 30 MB
+dist/pm-linux-<版本>.tar.gz.sha256   校验文件
 ```
 
 内部结构：
 
 ```
-package/
-├── app/                    后端源码
-│   ├── app/                FastAPI 应用
+pm/
+├── backend/
+│   ├── app/                后端源码（FastAPI 应用）
 │   ├── alembic/            数据库迁移
+│   ├── alembic.ini
 │   ├── scripts/            管理脚本（含 backup.py）
+│   ├── fonts/              PDF 导出中文字体（需自行放入 ttf/ttc）
 │   ├── requirements.txt    依赖清单
 │   └── .env.example
-├── frontend/dist/          前端产物（2.1 MB）
-├── wheels/                 Python 离线依赖包（约 40 MB）
-└── install.sh              一键安装脚本
+├── frontend/dist/          前端产物（部署后为 /opt/pm/frontend/dist）
+├── wheels/                 Linux x86_64 离线依赖（约 25 MB）
+├── deploy.sh               一键安装脚本
+└── README.md               部署说明
 ```
 
 ### 3.5 打包机与目标机的关系
@@ -120,14 +122,13 @@ package/
 | 操作系统 | 可不同（脚本会按目标平台下载对应 wheel） |
 | 架构 | 都需 x86_64（ARM 需改脚本中的 platform 参数） |
 
-`pack.sh` 会为两个平台分别下载：
+`pack.sh` / `pack.ps1` 只下载 Linux x86_64 的 wheel：
 
 ```bash
-# Linux
+--platform manylinux2014_x86_64
 --platform manylinux_2_28_x86_64
-
-# Windows
---platform win_amd64
+--platform manylinux_2_17_x86_64
+--python-version 312 --implementation cp --abi cp312
 ```
 
 这样打出的包在对应平台上可直接安装，不依赖打包机的操作系统。
@@ -139,18 +140,21 @@ package/
 # 假设放到 /root/
 
 # 2. 解压
-tar xzf pm-linux-offline.tar.gz
-cd package
+tar xzf pm-linux-<版本>.tar.gz
+cd pm
 
 # 3. 一键安装（需要 root）
-sudo bash install.sh
+sudo bash deploy.sh
+#    需要 PostgreSQL 时加参数：sudo bash deploy.sh --postgres
 ```
 
-### install.sh 做了什么
+默认安装 **SQLite**，数据文件在 `/data/pm/pm.db`（与应用代码分离，升级不丢）。
+
+### deploy.sh 做了什么
 
 | 步骤 | 内容 |
 |---|---|
-| 1 | 检查 Python 3.12、PostgreSQL 18 是否就绪 |
+| 1 | 检查 Python 3.12 是否就绪（未指定 `--postgres` 时不要求 PostgreSQL） |
 | 2 | 创建 `pm` 用户与 `/opt/pm`、`/data/pm` 目录 |
 | 3 | 部署代码到 `/opt/pm` |
 | 4 | 创建虚拟环境，**离线安装**依赖（`--no-index --find-links wheels`） |
@@ -170,19 +174,20 @@ sudo bash install.sh
   管理员账号：admin  密码：Admin@123
 
   数据库密码： xxxxxxxxxxxxxxxxxxxxxxxx
-  （已写入 /opt/pm/app/.env，请记录备用）
+  （已写入 /opt/pm/backend/.env，请记录备用）
 ```
 
 ### 部署后的目录结构
 
 ```
 /opt/pm/                        程序目录
-├── app/
+├── backend/
 │   ├── .venv/                  虚拟环境（含全部依赖）
 │   ├── .env                    配置文件（权限 600）
 │   ├── app/                    应用代码
 │   ├── alembic/                迁移脚本
-│   └── scripts/                管理脚本
+│   ├── scripts/                管理脚本
+│   └── fonts/                  PDF 中文字体
 └── frontend/dist/              前端静态文件
 
 /data/pm/                       数据目录（独立于程序，升级不丢）
@@ -225,7 +230,7 @@ apt-get download python3.12 python3.12-venv python3.12-dev
 sudo dpkg -i *.deb
 ```
 
-### 5.2 PostgreSQL 18
+### 5.2 PostgreSQL 18（可选）
 
 **Ubuntu / Debian**
 
@@ -302,13 +307,13 @@ journalctl -u pm | grep backup
 ls -lh /data/pm/backup/
 
 # 手动触发一次
-sudo -u pm /opt/pm/app/.venv/bin/python -c "
+sudo -u pm /opt/pm/backend/.venv/bin/python -c "
 from app.jobs.scheduler import job_database_backup
 job_database_backup()
 "
 
 # 或直接用 pg_dump
-sudo -u pm bash -c 'cd /opt/pm/app && set -a && . ./.env && set +a && \
+sudo -u pm bash -c 'cd /opt/pm/backend && set -a && . ./.env && set +a && \
   pg_dump "${PM_DATABASE_URL/postgresql+psycopg/postgresql}" \
   --format=custom --compress=6 -f /data/pm/backup/manual_$(date +%Y%m%d).dump'
 ```
@@ -318,7 +323,7 @@ sudo -u pm bash -c 'cd /opt/pm/app && set -a && . ./.env && set +a && \
 ```bash
 systemctl stop pm
 
-sudo -u pm bash -c 'cd /opt/pm/app && set -a && . ./.env && set +a && \
+sudo -u pm bash -c 'cd /opt/pm/backend && set -a && . ./.env && set +a && \
   pg_restore --clean --if-exists \
   -d "${PM_DATABASE_URL/postgresql+psycopg/postgresql}" \
   /data/pm/backup/pm_20260101_020000.dump'
@@ -330,7 +335,7 @@ systemctl start pm
 
 ```bash
 # 1. 备份
-sudo -u pm bash -c 'cd /opt/pm/app && set -a && . ./.env && set +a && \
+sudo -u pm bash -c 'cd /opt/pm/backend && set -a && . ./.env && set +a && \
   pg_dump "${PM_DATABASE_URL/postgresql+psycopg/postgresql}" \
   --format=custom -f /data/pm/backup/before_upgrade.dump'
 
@@ -339,32 +344,32 @@ systemctl stop pm
 
 # 3. 替换代码（保留 .env 和 .venv）
 cd /opt/pm
-cp app/.env /tmp/pm.env.bak
-mv app /opt/pm/app.old
-tar xzf pm-linux-offline-new.tar.gz
-cp -r package/app /opt/pm/app
-cp /tmp/pm.env.bak /opt/pm/app/.env
-chown -R pm:pm /opt/pm/app
+cp /opt/pm/backend/.env /tmp/pm.env.bak
+mv backend /opt/pm/backend.old
+tar xzf pm-linux-<版本>.tar.gz
+cp -r package/backend /opt/pm/backend
+cp /tmp/pm.env.bak /opt/pm/backend/.env
+chown -R pm:pm /opt/pm/backend
 
 # 4. 更新依赖（如果有变化）
-cd /opt/pm/app
-sudo -u pm ./.venv/bin/pip install --no-index --find-links /opt/pm/wheels -r requirements.txt
+cd /opt/pm/backend
+sudo -u pm ./.venv/bin/pip install --no-index --find-links /opt/pm/wheels -r /opt/pm/backend/requirements.txt
 
 # 5. 执行迁移
-sudo -u pm bash -c 'cd /opt/pm/app && ./.venv/bin/alembic upgrade head'
+sudo -u pm bash -c 'cd /opt/pm/backend && ./.venv/bin/alembic upgrade head'
 
 # 6. 启动
 systemctl start pm
 systemctl status pm
 
 # 7. 确认无误后清理旧版
-rm -rf /opt/pm/app.old
+rm -rf /opt/pm/backend.old
 ```
 
 ### 6.5 修改配置
 
 ```bash
-sudo -u pm vi /opt/pm/app/.env
+sudo -u pm vi /opt/pm/backend/.env
 systemctl restart pm
 ```
 
@@ -419,11 +424,11 @@ python3.12 --version
 systemctl status postgresql
 
 # 2. 手动测试连接
-sudo -u pm bash -c 'cd /opt/pm/app && set -a && . ./.env && set +a && \
+sudo -u pm bash -c 'cd /opt/pm/backend && set -a && . ./.env && set +a && \
   psql "${PM_DATABASE_URL/postgresql+psycopg/postgresql}" -c "SELECT 1"'
 
 # 3. 检查 .env 里的密码是否正确
-sudo cat /opt/pm/app/.env | grep DATABASE_URL
+sudo cat /opt/pm/backend/.env | grep DATABASE_URL
 ```
 
 常见原因：PostgreSQL 的 `pg_hba.conf` 不允许密码登录。
@@ -445,7 +450,7 @@ ls /opt/pm/frontend/dist/
 # 应有 index.html 和 assets/
 
 # 2. 确认 .env 里的路径正确
-grep FRONTEND /opt/pm/app/.env
+grep FRONTEND /opt/pm/backend/.env
 # PM_FRONTEND_SERVE=true
 # PM_FRONTEND_DIR=/opt/pm/frontend/dist
 
@@ -466,16 +471,16 @@ sudo apt install -y fonts-wqy-zenhei
 sudo yum install -y wqy-zenhei-fonts
 
 # 或手动放置
-sudo mkdir -p /opt/pm/app/fonts
-sudo cp /usr/share/fonts/truetype/wqy/wqy-zenhei.ttc /opt/pm/app/fonts/
-sudo chown pm:pm /opt/pm/app/fonts/*
+sudo mkdir -p /opt/pm/backend/fonts
+sudo cp /usr/share/fonts/truetype/wqy/wqy-zenhei.ttc /opt/pm/backend/fonts/
+sudo chown pm:pm /opt/pm/backend/fonts/*
 ```
 
 程序会自动查找以下路径：
 
 ```
-/opt/pm/app/fonts/simhei.ttf
-/opt/pm/app/fonts/simsun.ttc
+/opt/pm/backend/fonts/simhei.ttf
+/opt/pm/backend/fonts/simsun.ttc
 /usr/share/fonts/.../NotoSansCJK-Regular.ttc
 /usr/share/fonts/.../wqy-zenhei.ttc
 ```
@@ -515,11 +520,12 @@ sudo systemctl restart systemd-timesyncd
 ## 八、检查清单
 
 - [ ] 服务器已装 Python 3.12（`python3.12 --version`）
-- [ ] 服务器已装 PostgreSQL 18（`psql --version`）
+- [ ] 服务器已装 Python 3.12（`python3.12 --version`）
+- [ ] 若用 PostgreSQL，另需 `psql --version` 且部署时加 `--postgres`
 - [ ] PostgreSQL 服务已启动（`systemctl status postgresql`）
 - [ ] 已拷贝 `pm-linux-offline.tar.gz`
 - [ ] 已解压并进入 `package` 目录
-- [ ] `sudo bash install.sh` 执行无报错
+- [ ] `sudo bash deploy.sh` 执行无报错
 - [ ] `systemctl status pm` 显示 active (running)
 - [ ] `curl http://127.0.0.1:8000/api/health` 返回 200
 - [ ] 浏览器能打开登录页
