@@ -8,7 +8,7 @@
 #   sudo bash deploy.sh --port 8000 --workers 2
 #
 # 前提：
-#   - 已安装 Python 3.12（必须）
+#   - 已安装 Python 3.13（必须）
 #   - PostgreSQL 18 仅在指定 --postgres 时需要
 #
 # 本脚本会依次完成：
@@ -20,16 +20,22 @@ set -e
 # ---------------------------------------------------------------- 参数
 # 默认 SQLite（单机、零依赖）。需要 PostgreSQL 时显式指定 --postgres。
 USE_POSTGRES=0
+USE_NGINX=0
+DOMAIN=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --postgres)  USE_POSTGRES=1; shift ;;
+        --nginx)     USE_NGINX=1; shift ;;
+        --domain)    DOMAIN="$2"; USE_NGINX=1; shift 2 ;;
         --port)      HTTP_PORT="$2"; shift 2 ;;
         --workers)   WORKERS="$2"; shift 2 ;;
         -h|--help)
             echo "用法：sudo bash deploy.sh [选项]"
-            echo "  --postgres        使用 PostgreSQL（默认 SQLite）"
-            echo "  --port <端口>     监听端口，默认 8000"
-            echo "  --workers <数量>  uvicorn worker 数，默认 2"
+            echo "  --postgres          使用 PostgreSQL（默认 SQLite）"
+            echo "  --nginx             安装并配置 nginx 反向代理（80 端口）"
+            echo "  --domain <域名>     指定域名，隐含 --nginx"
+            echo "  --port <端口>       应用监听端口，默认 8000"
+            echo "  --workers <数量>    uvicorn worker 数，默认 2"
             exit 0 ;;
         *) echo "未知参数：$1（用 --help 查看）"; exit 1 ;;
     esac
@@ -59,23 +65,23 @@ echo " 1/8  检查环境"
 echo "=============================================="
 
 PY=""
-for c in python3.12 python3; do
+for c in python3.13 python3.12 python3; do
     if command -v "$c" >/dev/null 2>&1; then
         V=$($c -c 'import sys;print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null || echo "")
-        if [ "$V" = "3.12" ]; then PY=$c; break; fi
+        if [ "$V" = "3.13" ]; then PY=$c; break; fi
     fi
 done
 [ -z "$PY" ] && {
-    err "需要 Python 3.12"
-    echo "  Ubuntu/Debian: apt install python3.12 python3.12-venv"
-    echo "  CentOS/RHEL:   yum install python3.12"
+    err "需要 Python 3.13"
+    echo "  Ubuntu/Debian: apt install python3.13 python3.13-venv"
+    echo "  CentOS/RHEL:   yum install python3.13"
     exit 1
 }
 info "Python: $($PY --version)"
 
-# venv 模块必须可用（Debian 系要单独装 python3.12-venv）
+# venv 模块必须可用（Debian 系要单独装 python3.13-venv）
 if ! $PY -c "import venv" >/dev/null 2>&1; then
-    err "缺少 venv 模块：apt install python3.12-venv"
+    err "缺少 venv 模块：apt install python3.13-venv"
     exit 1
 fi
 info "venv 模块可用"
@@ -149,6 +155,13 @@ rand_alnum() {
     fi
 }
 
+# 前端托管：默认由应用直出；用 nginx 时交给 nginx
+if [ "$USE_NGINX" = "1" ]; then
+    FRONTEND_SERVE=false
+else
+    FRONTEND_SERVE=true
+fi
+
 # 数据库选择：
 #   默认 SQLite —— 单机、零额外服务，本项目用户量下完全够用。
 #   指定 --postgres 且机器已装 PostgreSQL 时才走 PG。
@@ -214,7 +227,8 @@ PM_DATA_DIR=$DATA_DIR
 PM_UPLOAD_DIR=$DATA_DIR/upload
 PM_UPLOAD_MAX_SIZE_MB=50
 
-PM_FRONTEND_SERVE=true
+# 使用 nginx 时由 nginx 托管前端，应用只提供 API
+PM_FRONTEND_SERVE=$FRONTEND_SERVE
 PM_FRONTEND_DIR=$INSTALL_DIR/frontend/dist
 
 PM_SCHEDULER_ENABLED=true
@@ -302,6 +316,113 @@ systemctl enable $SERVICE
 systemctl restart $SERVICE
 info "systemd 服务已配置并启动"
 
+# ---------------------------------------------------------------- nginx
+if [ "$USE_NGINX" = "1" ]; then
+    echo ""
+    echo "=============================================="
+    echo " 7.5/8  配置 nginx 反向代理"
+    echo "=============================================="
+
+    if ! command -v nginx >/dev/null 2>&1; then
+        info "安装 nginx ..."
+        if command -v apt >/dev/null 2>&1; then
+            apt install -y -qq nginx >/dev/null 2>&1 || { err "nginx 安装失败"; exit 1; }
+        elif command -v dnf >/dev/null 2>&1; then
+            dnf install -y -q nginx >/dev/null 2>&1 || { err "nginx 安装失败"; exit 1; }
+        elif command -v yum >/dev/null 2>&1; then
+            yum install -y -q nginx >/dev/null 2>&1 || { err "nginx 安装失败"; exit 1; }
+        else
+            err "无法自动安装 nginx，请手动安装后重跑（或去掉 --nginx）"
+            exit 1
+        fi
+    fi
+    info "nginx: $(nginx -v 2>&1 | sed 's/^nginx version: //')"
+
+    # nginx 需能读取前端产物
+    chmod -R a+rX "$INSTALL_DIR/frontend/dist" 2>/dev/null || true
+
+    SERVER_NAME="${DOMAIN:-_}"
+    NGX_CONF="/etc/nginx/conf.d/pm.conf"
+
+    cat > "$NGX_CONF" <<NGXEOF
+# 由 deploy.sh 生成于 $(date '+%Y-%m-%d %H:%M:%S')
+# 改域名/证书后：nginx -t && systemctl reload nginx
+
+upstream pm_backend {
+    server 127.0.0.1:$HTTP_PORT;
+    keepalive 16;
+}
+
+server {
+    listen 80;
+    server_name $SERVER_NAME;
+
+    client_max_body_size 60m;
+
+    # Let's Encrypt 验证目录（申请证书时使用）
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/html;
+        default_type "text/plain";
+        try_files \$uri =404;
+    }
+
+    location = /healthz {
+        access_log off;
+        return 200 "ok\n";
+    }
+
+    location /assets/ {
+        root $INSTALL_DIR/frontend/dist;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        access_log off;
+    }
+
+    location / {
+        root $INSTALL_DIR/frontend/dist;
+        try_files \$uri \$uri/ /index.html;
+
+        location = /index.html {
+            add_header Cache-Control "no-cache, no-store, must-revalidate";
+        }
+    }
+
+    location /api/ {
+        proxy_pass http://pm_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Connection        "";
+
+        proxy_set_header Host              \$host;
+        proxy_set_header X-Real-IP         \$remote_addr;
+        proxy_set_header X-Forwarded-For   \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Host  \$host;
+        proxy_set_header X-Forwarded-Port  \$server_port;
+
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+        proxy_buffering    off;
+    }
+}
+NGXEOF
+
+    if nginx -t >/dev/null 2>&1; then
+        systemctl enable nginx >/dev/null 2>&1 || true
+        systemctl reload nginx 2>/dev/null || systemctl restart nginx
+        info "nginx 已配置：$NGX_CONF（server_name: $SERVER_NAME）"
+        if [ -n "$DOMAIN" ]; then
+            info "HTTPS 请执行：certbot --nginx -d $DOMAIN"
+            warn "详见 doc/Nginx与域名配置.md"
+        else
+            warn "未指定域名，server_name 为占位 _；改域名后 nginx -t && systemctl reload nginx"
+        fi
+    else
+        err "nginx 配置语法错误，已保留 $NGX_CONF 供检查"
+        nginx -t
+        exit 1
+    fi
+fi
+
 echo ""
 echo "=============================================="
 echo " 8/8  等待服务就绪"
@@ -360,7 +481,16 @@ echo "=============================================="
 echo " 部署完成"
 echo "=============================================="
 echo ""
-echo "  访问地址： http://${IP}:${HTTP_PORT}"
+if [ "$USE_NGINX" = "1" ]; then
+    if [ -n "$DOMAIN" ]; then
+        echo "  访问地址： http://$DOMAIN"
+    else
+        echo "  访问地址： http://${IP}   （nginx 80）"
+    fi
+    echo "  后端直连： http://${IP}:${HTTP_PORT}"
+else
+    echo "  访问地址： http://${IP}:${HTTP_PORT}"
+fi
 echo "  $ADMIN_MSG"
 echo ""
 if [ "$USE_PG" = "1" ]; then

@@ -3,11 +3,11 @@
 #
 # 与 pack.sh 产出完全一致的包：标准 Python 应用部署包
 #   - 源码 + 离线依赖 wheel + 前端构建产物
-#   - 目标机只需预装 Python 3.12 即可离线安装
+#   - 目标机只需预装 Python 3.13 即可离线安装
 #
 # 用法：
 #   .\pack.ps1
-#   .\pack.ps1 -PythonHome "D:\Programs\Python312"
+#   .\pack.ps1 -PythonHome "D:\Programs\Python313"
 #
 # 产出：
 #   dist\pm-linux-<版本>.tar.gz
@@ -17,7 +17,7 @@
 #   tar xzf pm-linux-<版本>.tar.gz
 #   cd pm && sudo bash deploy.sh
 #
-# 打包机需要：Python 3.12、pnpm（前端未构建时）、网络
+# 打包机需要：Python 3.13、pnpm（前端未构建时）、网络
 # ============================================================================
 
 param(
@@ -41,12 +41,12 @@ function Step($m) {
     Write-Host "=============================================================="
 }
 
-function Test-Py312 {
+function Test-Py313 {
     param([string]$Exe)
     if (-not $Exe -or -not (Test-Path $Exe)) { return $false }
     try {
         $v = & $Exe -c "import sys;print('%d.%d' % sys.version_info[:2])" 2>$null
-        return ($v -eq "3.12")
+        return ($v -eq "3.13")
     } catch { return $false }
 }
 
@@ -56,41 +56,41 @@ function Resolve-Python {
     # 1) 显式指定优先
     if ($Hint) {
         $h = Join-Path $Hint "python.exe"
-        if (Test-Py312 $h) { return $h }
-        if (Test-Py312 $Hint) { return $Hint }
+        if (Test-Py313 $h) { return $h }
+        if (Test-Py313 $Hint) { return $Hint }
     }
 
-    # 2) py 启动器：枚举已注册的 3.12（含 uv 管理的便携发行版）
+    # 2) py 启动器：枚举已注册的 3.13
     $py = Get-Command py -ErrorAction SilentlyContinue
     if ($py) {
         $listed = @()
         try { $listed = & py -0p 2>$null } catch { }
         foreach ($line in $listed) {
-            if ($line -match '(3\.12)') {
+            if ($line -match '(3\.13)') {
                 $m = [regex]::Match($line, '([A-Za-z]:\\.*python\.exe)')
-                if ($m.Success -and (Test-Py312 $m.Groups[1].Value)) { return $m.Groups[1].Value }
+                if ($m.Success -and (Test-Py313 $m.Groups[1].Value)) { return $m.Groups[1].Value }
             }
         }
     }
 
     # 3) PATH 上的候选
-    foreach ($name in @("python3.12", "python")) {
+    foreach ($name in @("python3.13", "python")) {
         $c = Get-Command $name -ErrorAction SilentlyContinue
-        if ($c -and (Test-Py312 $c.Source)) { return $c.Source }
+        if ($c -and (Test-Py313 $c.Source)) { return $c.Source }
     }
 
     # 4) 常见安装目录
     $patterns = @(
-        "$env:APPDATA\uv\python\cpython-3.12*\python.exe",
-        "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe",
-        "$env:LOCALAPPDATA\uv\python\cpython-3.12*\python.exe",
-        "C:\Python312\python.exe",
-        "C:\Program Files\Python312\python.exe",
-        "D:\Programs\Python312\python.exe"
+        "$env:APPDATA\uv\python\cpython-3.13*\python.exe",
+        "$env:LOCALAPPDATA\Programs\Python\Python313\python.exe",
+        "$env:LOCALAPPDATA\uv\python\cpython-3.13*\python.exe",
+        "C:\Python313\python.exe",
+        "C:\Program Files\Python313\python.exe",
+        "D:\Programs\Python313\python.exe"
     )
     foreach ($pat in $patterns) {
         foreach ($f in @(Get-Item $pat -ErrorAction SilentlyContinue)) {
-            if (Test-Py312 $f.FullName) { return $f.FullName }
+            if (Test-Py313 $f.FullName) { return $f.FullName }
         }
     }
 
@@ -103,9 +103,9 @@ try {
 
     $python = Resolve-Python -Hint $PythonHome
     if (-not $python) {
-        Err "需要 Python 3.12"
-        Write-Host "  下载：https://www.python.org/downloads/release/python-31214/"
-        Write-Host "  或用 -PythonHome 指定已有 3.12 目录"
+        Err "需要 Python 3.13"
+        Write-Host "  下载：https://www.python.org/downloads/release/python-3130/"
+        Write-Host "  或用 -PythonHome 指定已有 3.13 目录"
         exit 1
     }
     Info "Python: $(& $python --version)  ($python)"
@@ -184,24 +184,40 @@ try {
     $wheels = Join-Path $pkg "wheels"
     New-Item -ItemType Directory -Path $wheels -Force | Out-Null
 
-    & $python -m pip download `
-        -r (Join-Path $pkg "backend\requirements.txt") `
-        -d $wheels `
-        --only-binary=:all: `
-        --platform manylinux2014_x86_64 `
-        --platform manylinux_2_28_x86_64 `
-        --platform manylinux_2_17_x86_64 `
-        --python-version 312 `
-        --implementation cp `
-        --abi cp312 `
-        --quiet 2>$null
+    # pip 会把提示信息写到 stderr，PowerShell 5.1 下会被当成 NativeCommandError，
+    # 因此临时把 stderr 重定向到空，只看退出码判断成败。
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & $python -m pip download `
+            -r (Join-Path $pkg "backend\requirements.txt") `
+            -d $wheels `
+            --only-binary=:all: `
+            --platform manylinux2014_x86_64 `
+            --platform manylinux_2_28_x86_64 `
+            --platform manylinux_2_17_x86_64 `
+            --python-version 313 `
+            --implementation cp `
+            --abi cp313 `
+            --quiet 2>&1 | Out-Null
+        $pipExit = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $prevEap
+    }
 
-    if ($LASTEXITCODE -eq 0) {
+    if ($pipExit -eq 0) {
         Info "已下载 $((Get-ChildItem $wheels -Filter '*.whl').Count) 个 wheel（Linux x86_64）"
     } else {
         Warn "跨平台下载失败，改用打包机本机平台"
-        & $python -m pip download -r (Join-Path $pkg "backend\requirements.txt") -d $wheels --quiet
-        if ($LASTEXITCODE -ne 0) { Err "wheel 下载失败"; exit 1 }
+        $prevEap = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        try {
+            & $python -m pip download -r (Join-Path $pkg "backend\requirements.txt") -d $wheels --quiet 2>&1 | Out-Null
+            $pipExit2 = $LASTEXITCODE
+        } finally {
+            $ErrorActionPreference = $prevEap
+        }
+        if ($pipExit2 -ne 0) { Err "wheel 下载失败"; exit 1 }
     }
 
     # ------------------------------------------------------------ 5. 说明
@@ -210,7 +226,7 @@ try {
     $readmeLines = @(
         '# 部署说明',
         '',
-        '本包为标准 Python 应用部署包，**目标机需要预装 Python 3.12**。',
+        '本包为标准 Python 应用部署包，**目标机需要预装 Python 3.13**。',
         '',
         '## 安装',
         '',
@@ -278,7 +294,7 @@ try {
     Write-Host "  大小： $sizeMB MB"
     Write-Host "  SHA256： $hash"
     Write-Host ""
-    Write-Host "  目标机部署（需预装 Python 3.12）："
+    Write-Host "  目标机部署（需预装 Python 3.13）："
     Write-Host "    tar xzf $tarName"
     Write-Host "    cd pm && sudo bash deploy.sh"
     Write-Host ""

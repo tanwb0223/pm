@@ -40,12 +40,12 @@ cd "$ROOT"
 step "1/6  检查构建环境"
 
 PY=""
-for c in python3.12 python3 python; do
+for c in python3.13 python3 python; do
     command -v "$c" >/dev/null 2>&1 || continue
     v="$($c -c 'import sys;print("%d.%d" % sys.version_info[:2])' 2>/dev/null || echo "")"
-    if [ "$v" = "3.12" ]; then PY="$c"; break; fi
+    if [ "$v" = "3.13" ]; then PY="$c"; break; fi
 done
-[ -z "$PY" ] && { err "需要 Python 3.12（.pyc 与解释器版本强绑定，且目标机按 3.12 约定）"; exit 1; }
+[ -z "$PY" ] && { err "需要 Python 3.13（下载的 wheel 与解释器版本强绑定，目标机须同为 3.13）"; exit 1; }
 info "Python: $($PY --version)"
 
 for p in backend/app backend/alembic backend/scripts backend/requirements-prod.txt deploy-linux.sh; do
@@ -119,9 +119,9 @@ if $PY -m pip download \
         --platform manylinux2014_x86_64 \
         --platform manylinux_2_28_x86_64 \
         --platform manylinux_2_17_x86_64 \
-        --python-version 312 \
+        --python-version 313 \
         --implementation cp \
-        --abi cp312 \
+        --abi cp313 \
         --quiet 2>/dev/null; then
     info "已下载 $(find "$WHEELS" -name '*.whl' | wc -l) 个 wheel（Linux x86_64）"
 else
