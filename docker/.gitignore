@@ -1,0 +1,8 @@
+# 运行时生成，不入库
+.env
+Caddyfile
+data/
+images/
+dist/
+certs/*
+!certs/README.md

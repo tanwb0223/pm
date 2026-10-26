@@ -1,0 +1,7 @@
+# 统一换行，避免 Windows 检出后 shell 脚本带 CRLF 在 Linux 上无法执行
+*.sh text eol=lf
+docker/*.sh text eol=lf
+docker/Dockerfile text eol=lf
+docker/*.yml text eol=lf
+docker/Caddyfile.tpl text eol=lf
+docker/.env.docker.example text eol=lf

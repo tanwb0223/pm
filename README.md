@@ -227,6 +227,20 @@ AL-09 / AL-10 只能通过补齐数据自动关闭，不能手工关闭或忽略
 
 ## 部署
 
+### Docker（推荐：离线部署只需拷镜像）
+
+`docker/` 提供完整的 Docker Compose 方案：
+
+- 有网机器构建离线包：`bash docker/build-offline.sh`，Windows 用 `powershell -ExecutionPolicy Bypass -File docker\build-offline.ps1`
+- 目标机：解压 → 修改 `.env` → `sudo bash deploy.sh`
+- 离线包约 **70 MB**（含 app + Caddy 镜像），目标机不需要源码、Python、Node、外网
+- 域名、证书、SQLite 数据目录、附件目录都在 `.env` 配置
+- 日常运维用 `./pmctl.sh status|logs|backup|restore|upgrade`
+
+详见 [`docker/README.md`](docker/README.md)。
+
+### 原生部署（systemd + Nginx）
+
 生产环境参考 `frontend/README.md` 的 Nginx 配置，要点：
 
 - 前端 `try_files $uri $uri/ /index.html`（history 路由）

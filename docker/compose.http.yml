@@ -1,0 +1,5 @@
+# HTTP 模式覆盖：TLS 由前置网关终止时，只映射 HTTP 端口
+services:
+  caddy:
+    ports:
+      - "${PM_HTTP_PORT:-80}:80"

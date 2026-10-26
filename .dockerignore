@@ -1,0 +1,52 @@
+# Docker 构建上下文（仓库根目录）忽略清单
+# 目标：只把 backend/ 与 frontend/ 的源码送进构建器，避免把本机数据、密钥、
+# 构建产物、离线包一起传进去（既慢又可能泄密）。
+
+# ---------------------------------------------------------------- 版本库与本地工具
+.git
+.gitignore
+.github
+.work
+.workbuddy
+.acl-recovery
+doc
+logs
+*.log
+
+# ---------------------------------------------------------------- 本机运行数据与密钥
+backend/.env
+backend/.env.*
+backend/.venv
+backend/data
+backend/uploads
+backend/tests
+backend/.pytest_cache
+backend/**/__pycache__
+backend/**/*.pyc
+frontend/node_modules
+frontend/dist
+frontend/.vite
+frontend/*.tsbuildinfo
+data
+uploads
+certs
+
+# ---------------------------------------------------------------- Docker 部署目录中的运行时内容
+docker/.env
+docker/.env.*
+docker/Caddyfile
+docker/certs
+docker/data
+docker/images
+docker/dist
+docker/*.tar
+docker/*.tar.gz
+docker/pm-docker-offline-*
+
+# ---------------------------------------------------------------- 打包产物
+*.zip
+*.tar.gz
+*.tar
+pm-windows-portable.zip
+pm-linux-portable.tar.gz
+pm-offline-*

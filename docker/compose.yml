@@ -1,0 +1,95 @@
+# ============================================================================
+# 产教融合项目管理系统 · Docker Compose 基础配置
+#
+# 不要直接 `docker compose up`：端口映射在 compose.tls.yml / compose.http.yml
+# 两个覆盖文件里，由 deploy.sh / pmctl.sh 根据 PM_TLS_MODE 自动选择。
+#
+# 服务：
+#   app    FastAPI + 前端静态文件（仅容器网络，不对外暴露）
+#   caddy  反向代理 + HTTPS 证书（唯一对外入口）
+# ============================================================================
+
+name: ${PM_PROJECT_NAME:-pm}
+
+services:
+  app:
+    image: ${PM_IMAGE:-pm-app:latest}
+    container_name: ${PM_PROJECT_NAME:-pm}-app
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    env_file:
+      - .env
+    environment:
+      # 容器内路径固定；宿主机路径由 volumes 挂载
+      PM_DATA_DIR: /data/pm
+      PM_DATABASE_URL: sqlite:////data/pm/pm.db
+      PM_UPLOAD_DIR: /data/pm/upload
+      PM_BACKUP_DIR: /data/pm/backup
+      PM_FRONTEND_SERVE: "true"
+      PM_FRONTEND_DIR: /app/frontend/dist
+      PM_FRONTEND_BASE_URL: ${PM_PUBLIC_URL:-}
+      PM_DEBUG: ${PM_DEBUG:-false}
+      PM_SECRET_KEY: ${PM_SECRET_KEY:?PM_SECRET_KEY 未设置：请先运行 deploy.sh，或手工写入 .env}
+      PM_ACCESS_TOKEN_EXPIRE_MINUTES: ${PM_ACCESS_TOKEN_EXPIRE_MINUTES:-480}
+      PM_UPLOAD_MAX_SIZE_MB: ${PM_UPLOAD_MAX_SIZE_MB:-50}
+      PM_SCHEDULER_ENABLED: ${PM_SCHEDULER_ENABLED:-true}
+      PM_BACKUP_ENABLED: ${PM_BACKUP_ENABLED:-true}
+      PM_BACKUP_KEEP_DAYS: ${PM_BACKUP_KEEP_DAYS:-30}
+      PM_DAILY_SCAN_HOUR: ${PM_DAILY_SCAN_HOUR:-1}
+      PM_DIGEST_HOUR: ${PM_DIGEST_HOUR:-8}
+      PM_DIGEST_MINUTE: ${PM_DIGEST_MINUTE:-30}
+      PM_CLEANUP_ENABLED: ${PM_CLEANUP_ENABLED:-false}
+      TZ: ${TZ:-Asia/Shanghai}
+    command:
+      - sh
+      - -c
+      - exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*' --workers ${PM_WORKERS:-1}
+    volumes:
+      # SQLite 数据根目录：pm.db / backup / log / locks
+      - ${PM_DATA_DIR:?PM_DATA_DIR 未设置}:/data/pm
+      # 附件目录：可单独挂到另一块盘或 NAS
+      - ${PM_UPLOAD_DIR:?PM_UPLOAD_DIR 未设置}:/data/pm/upload
+    expose:
+      - "8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3).status == 200 else 1)
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  caddy:
+    image: ${PM_CADDY_IMAGE:-caddy:2-alpine}
+    container_name: ${PM_PROJECT_NAME:-pm}-caddy
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./certs:/certs:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  caddy_data:
+  caddy_config:
